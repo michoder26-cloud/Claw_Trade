@@ -1,0 +1,63 @@
+"""Configuration for XAU/USD Trading System"""
+import os
+from typing import Optional
+from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    """Base configuration"""
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+
+    # Trading Settings
+    XAU_USD_SYMBOL = os.getenv("XAU_USD_SYMBOL", "GC=F")
+    BACKTESTING_START_DATE = os.getenv("BACKTESTING_START_DATE", "2023-01-01")
+    BACKTESTING_END_DATE = os.getenv("BACKTESTING_END_DATE", "2024-12-31")
+    INITIAL_BALANCE = float(os.getenv("INITIAL_BALANCE", 10000))
+    POSITION_SIZE_PERCENT = float(os.getenv("POSITION_SIZE_PERCENT", 2))
+    MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", 3))
+
+    # Risk Management
+    MAX_DRAWDOWN_PERCENT = float(os.getenv("MAX_DRAWDOWN_PERCENT", 10))
+    RISK_REWARD_RATIO = float(os.getenv("RISK_REWARD_RATIO", 1.5))
+    MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 2))
+
+    # Data
+    DATA_SOURCE = os.getenv("DATA_SOURCE", "yfinance")
+    YFINANCE_INTERVAL = os.getenv("YFINANCE_INTERVAL", "1h")
+
+    # Notifications
+    SLACK_WEBHOOK_URL: Optional[str] = os.getenv("SLACK_WEBHOOK_URL")
+    EMAIL_RECIPIENT: Optional[str] = os.getenv("EMAIL_RECIPIENT")
+
+    # Claude Models
+    ORCHESTRATOR_MODEL = "claude-opus-4-7"
+    ANALYST_MODEL = "claude-opus-4-7"
+
+    @classmethod
+    def validate(cls) -> bool:
+        """Validate required configurations"""
+        if not cls.ANTHROPIC_API_KEY:
+            raise ValueError("ANTHROPIC_API_KEY is required")
+        return True
+
+class BacktestConfig(Config):
+    """Backtesting specific configuration"""
+    MODE = "BACKTEST"
+    PAPER_TRADING = False
+    REAL_TRADING = False
+
+class PaperTradingConfig(Config):
+    """Paper trading configuration (simulated)"""
+    MODE = "PAPER"
+    PAPER_TRADING = True
+    REAL_TRADING = False
+
+class LiveTradingConfig(Config):
+    """Live trading configuration"""
+    MODE = "LIVE"
+    PAPER_TRADING = False
+    REAL_TRADING = True
+    BROKER_API_KEY = os.getenv("BROKER_API_KEY")
+    BROKER_ACCOUNT_ID = os.getenv("BROKER_ACCOUNT_ID")
