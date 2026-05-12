@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 class Config:
     """Base configuration"""
@@ -22,6 +22,10 @@ class Config:
     MAX_DRAWDOWN_PERCENT = float(os.getenv("MAX_DRAWDOWN_PERCENT", 10))
     RISK_REWARD_RATIO = float(os.getenv("RISK_REWARD_RATIO", 1.5))
     MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", 2))
+    BASE_LOT_SIZE = float(os.getenv("BASE_LOT_SIZE", 0.1))
+    USE_FIXED_SL_TP = os.getenv("USE_FIXED_SL_TP", "false").lower() == "true"
+    FIXED_SL_USD = float(os.getenv("FIXED_SL_USD", 10.0))
+    FIXED_TP_USD = float(os.getenv("FIXED_TP_USD", 20.0))
 
     # Data
     DATA_SOURCE = os.getenv("DATA_SOURCE", "yfinance")

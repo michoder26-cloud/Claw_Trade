@@ -25,18 +25,18 @@ class Trade:
     profit_loss_pct: float = 0.0
     status: str = "OPEN"  # OPEN, CLOSED, STOPPED_OUT, TAKE_PROFIT
 
-    def close(self, exit_price: float, exit_time: str):
+    def close(self, exit_price: float, exit_time: str, contract_size: float = 100.0):
         """Close the trade"""
         self.exit_price = exit_price
         self.exit_time = exit_time
         self.status = "CLOSED"
 
         if self.signal == "BUY":
-            self.profit_loss = (exit_price - self.entry_price) * self.position_size
+            self.profit_loss = (exit_price - self.entry_price) * self.position_size * contract_size
         else:  # SELL
-            self.profit_loss = (self.entry_price - exit_price) * self.position_size
+            self.profit_loss = (self.entry_price - exit_price) * self.position_size * contract_size
 
-        self.profit_loss_pct = (self.profit_loss / (self.entry_price * self.position_size)) * 100 if self.entry_price > 0 else 0
+        self.profit_loss_pct = (self.profit_loss / (self.entry_price * self.position_size * contract_size)) * 100 if self.entry_price > 0 else 0
 
 @dataclass
 class BacktestStats:
