@@ -24,6 +24,7 @@ class Trade:
     profit_loss: float = 0.0
     profit_loss_pct: float = 0.0
     status: str = "OPEN"  # OPEN, CLOSED, STOPPED_OUT, TAKE_PROFIT
+    trailed: bool = False
 
     def close(self, exit_price: float, exit_time: str, contract_size: float = 100.0):
         """Close the trade"""
@@ -102,7 +103,6 @@ class Backtester:
         )
 
         self.open_positions.append(trade)
-        self.trades.append(trade)
         logger.info(f"[{timestamp}] {signal} @ {price:.2f} | Size: {position_size:.2f} | SL: {stop_loss:.2f} | TP: {take_profit:.2f}")
 
         return True
@@ -132,10 +132,22 @@ class Backtester:
                     exit_price = trade.take_profit
                     exit_reason = "TAKE_PROFIT"
 
+            # Trailing Stop / Breakeven Logic: If profit > $10, move SL to entry + $2 (lock profit)
+            if not trade.trailed:
+                if trade.signal == "BUY" and (high_price - trade.entry_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price + 2.0
+                    trade.trailed = True
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +$2)")
+                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price - 2.0
+                    trade.trailed = True
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +$2)")
+
             if exit_price:
                 trade.close(exit_price, timestamp)
                 self.current_balance += trade.profit_loss
                 closed_positions.append(trade)
+                self.trades.append(trade)
                 logger.info(f"[{timestamp}] {exit_reason}: {trade.signal} closed @ {exit_price:.2f} | P&L: {trade.profit_loss:.2f}")
 
         # Remove closed positions
@@ -149,6 +161,7 @@ class Backtester:
         for trade in self.open_positions[:]:
             trade.close(current_price, timestamp)
             self.current_balance += trade.profit_loss
+            self.trades.append(trade)
             self.open_positions.remove(trade)
 
     def calculate_stats(self) -> BacktestStats:

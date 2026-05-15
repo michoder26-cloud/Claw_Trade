@@ -5,12 +5,14 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import logging
 import time
+import os
 
 from config import Config, BacktestConfig
 from data_handler import DataHandler
 from agents import QuantAnalyst, NewsAnalyst, BullAgent, BearAgent, CEOAgent
 from backtester import Backtester
 from mt5_connector import MT5Connector
+from discord_reporter import DiscordReporter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +25,14 @@ class MasterOrchestrator:
 
     def __init__(self, mode: str = "BACKTEST"):
         self.mode = mode
-        self.config = BacktestConfig if mode == "BACKTEST" else Config
+        if mode == "BACKTEST":
+            self.config = BacktestConfig
+            os.environ["USE_MOCK_AI"] = "true"
+        else:
+            self.config = Config
+            # Ensure live/paper trading respects environment variable
+            if "USE_MOCK_AI" in os.environ and os.environ["USE_MOCK_AI"] == "true" and os.getenv("USE_MOCK_AI_LIVE", "false").lower() != "true":
+                os.environ["USE_MOCK_AI"] = "false"
 
         # Initialize the new hierarchical 5-Agent group
         self.quant_analyst = QuantAnalyst()
@@ -44,6 +53,9 @@ class MasterOrchestrator:
         # Initialize MT5 Connector
         self.mt5_connector = MT5Connector()
 
+        # Initialize Discord Reporter
+        self.discord_reporter = DiscordReporter()
+
         # Market data
         self.market_data: Optional[pd.DataFrame] = None
         self.analysis_history: List[Dict] = []
@@ -55,13 +67,34 @@ class MasterOrchestrator:
         logger.info(f"Hierarchical Orchestrator initialized in {mode} mode")
 
     def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None) -> pd.DataFrame:
-        """Load and prepare market data"""
+        """Load and prepare market data with 30-day indicator warmup buffer"""
         logger.info("Loading market data...")
-        self.market_data = self.data_handler.prepare_for_analysis(symbol, start, end)
+        fetch_start = start
+        if start:
+            try:
+                fetch_start = (pd.to_datetime(start) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+            except Exception:
+                fetch_start = start
+
+        interval = os.getenv("YFINANCE_INTERVAL", "5m")
+        try:
+            self.market_data = self.data_handler.prepare_for_analysis(symbol, fetch_start, end, interval=interval)
+        except Exception as e:
+            logger.warning(f"Failed to fetch {interval} data (likely Yahoo Finance 60-day limit): {e}. Falling back to 1h interval.")
+            interval = "1h"
+            self.market_data = self.data_handler.prepare_for_analysis(symbol, fetch_start, end, interval=interval)
         
-        # Calculate EMA 50 & 200 for our Quant Analyst
+        # Calculate EMA 50, 200 & macro across the full warmup buffer
         self.market_data['ema_50'] = self.market_data['close'].ewm(span=50, adjust=False).mean()
         self.market_data['ema_200'] = self.market_data['close'].ewm(span=200, adjust=False).mean()
+        self.market_data['ema_macro'] = self.market_data['close'].ewm(span=288, adjust=False).mean() # 12-day Daily Macro Trend Filter
+        
+        # Slice to requested start date
+        if start and not self.market_data.empty:
+            try:
+                self.market_data = self.market_data.loc[start:]
+            except Exception:
+                pass
         
         logger.info(f"Loaded {len(self.market_data)} candles with technical extensions.")
         return self.market_data
@@ -98,12 +131,11 @@ class MasterOrchestrator:
             return "RANGING"
 
     def _calculate_fibonacci_levels(self, recent_data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate standard Fibonacci Retracement levels from recent high/low"""
+        """Calculate standard Fibonacci Retracement levels across full macro baseline (1200 candles / 50 trading days)"""
         if len(recent_data) < 50:
             return {}
-        recent_window = recent_data.tail(50)
-        high = recent_window['high'].max()
-        low = recent_window['low'].min()
+        high = recent_data['high'].max()
+        low = recent_data['low'].min()
         diff = high - low
         
         return {
@@ -112,17 +144,24 @@ class MasterOrchestrator:
             "38.2%": round(high - 0.382 * diff, 2),
             "50.0%": round(high - 0.5 * diff, 2),
             "61.8%": round(high - 0.618 * diff, 2),
+            "78.6%": round(high - 0.786 * diff, 2),
+            "88.7%": round(high - 0.887 * diff, 2),
             "100.0% (Low)": round(low, 2)
         }
 
     def analyze_at_timestamp(self, timestamp: pd.Timestamp, row: pd.Series) -> Dict:
         """Runs the complete hierarchical 5-Agent pipeline at a given timestamp"""
-        recent_data = self.market_data[:timestamp].tail(50)
-        market_context = self.data_handler.format_market_context(recent_data, n_candles=10)
+        # Multi-Timeframe Integration:
+        # daily_data: 1200 candles (approx. 50 trading days) to determine macro trend, regime, and Fibo structures
+        daily_data = self.market_data[:timestamp].tail(1200)
+        # hourly_data: 50 candles to determine near-term context (RSI, MACD confirmations)
+        hourly_data = self.market_data[:timestamp].tail(50)
         
-        # Determine regime and fibonacci levels in Python first
-        regime = self._determine_regime(recent_data)
-        fib_levels = self._calculate_fibonacci_levels(recent_data)
+        market_context = self.data_handler.format_market_context(hourly_data, n_candles=10)
+        
+        # Determine regime and fibonacci levels on the DAILY macro scale (50 days)
+        regime = self._determine_regime(daily_data)
+        fib_levels = self._calculate_fibonacci_levels(daily_data)
         
         current_date_str = str(timestamp)[:10]
         if self.last_trade_date != current_date_str:
@@ -140,19 +179,55 @@ class MasterOrchestrator:
         logger.info(f"📅 Analysis Time: {timestamp} | Regime: {regime}")
         logger.info(f"💰 Current Price: {row['close']:.2f}")
 
-        # 🛡️ RULE 1: Block trades instantly in volatile/thin market regimes to safeguard winrate
-        if regime in ["HIGH_VOLATILITY", "LOW_LIQUIDITY"]:
+        # 🛡️ RULE 1: Block trades instantly in low liquidity market regimes to safeguard winrate (allow volatility for day trading)
+        if regime in ["LOW_LIQUIDITY"]:
             logger.info(f"   ➜ Python Signal Engine blocked trade due to Regime: {regime}")
             analysis_record["trade_executed"] = False
             self.analysis_history.append(analysis_record)
             return analysis_record
 
-        # 🛡️ RULE 2: Block trade if daily limit (3) reached
-        if self.trades_today >= 3:
-            logger.info("   ➜ Python Signal Engine blocked trade: Daily Trade Limit (3) reached!")
+        # 🛡️ RULE 2: Block trade if daily limit reached
+        max_trades = getattr(self.config, "MAX_DAILY_TRADES", 3)
+        if self.trades_today >= max_trades:
+            logger.info(f"   ➜ Python Signal Engine blocked trade: Daily Trade Limit ({max_trades}) reached!")
             analysis_record["trade_executed"] = False
             self.analysis_history.append(analysis_record)
             return analysis_record
+
+        # Calculate MACD Crossover state on 5M intraday data over the latest 2 candles for lightning-fast timing trigger
+        macd_cross = "neutral"
+        if len(daily_data) >= 4:
+            # Scan back only 2 candles to catch a fresh high-probability crossover without chasing
+            for i in range(-1, -3, -1):
+                prev_macd = daily_data["macd"].iloc[i-1]
+                prev_signal = daily_data["macd_signal"].iloc[i-1]
+                curr_macd = daily_data["macd"].iloc[i]
+                curr_signal = daily_data["macd_signal"].iloc[i]
+                
+                if prev_macd <= prev_signal and curr_macd > curr_signal:
+                    macd_cross = "bullish_cross"
+                    break
+                elif prev_macd >= prev_signal and curr_macd < curr_signal:
+                    macd_cross = "bearish_cross"
+                    break
+
+        # Calculate Fibonacci zone relative to DAILY macro structure
+        close = row["close"]
+        high = fib_levels.get("0.0% (High)", close)
+        low = fib_levels.get("100.0% (Low)", close)
+        diff = high - low
+        fibo_zone = "neutral"
+        if diff > 0:
+            pct = (high - close) / diff
+            if 0.236 <= pct <= 0.382:
+                fibo_zone = "equilibrium"
+                logger.info(f"   ➜ Daily Fibo Zone: Equilibrium (23.6%-38.2%)")
+            elif 0.50 <= pct <= 0.618:
+                fibo_zone = "discount_premium"
+                logger.info(f"   ➜ Daily Fibo Zone: Discount/Premium Pool (50%-61.8%)")
+            elif 0.786 <= pct <= 0.887:
+                fibo_zone = "all_in_market_maker"
+                logger.info(f"   ➜ Daily Fibo Zone: 🚨 Market Maker All-In Zone (78.6%-88.7%)!")
 
         # Collect metrics for Quant Analyst
         indicators = {
@@ -160,9 +235,17 @@ class MasterOrchestrator:
             "rsi": row.get("rsi", 50.0),
             "macd": row.get("macd", 0.0),
             "macd_signal": row.get("macd_signal", 0.0),
+            "macd_cross": macd_cross,
+            "fibo_zone": fibo_zone,
+            "ema_5": row.get("ema_5", row["close"]),
+            "sma_36": row.get("sma_36", row["close"]),
+            "bb_upper": row.get("bb_upper", row["close"]),
+            "bb_lower": row.get("bb_lower", row["close"]),
             "ema_50": row.get("ema_50", row["close"]),
-            "ema_200": row.get("ema_200", row["close"]),
-            "fib_levels": fib_levels
+            "ema_200": row.get("ema_200", row["close"]), # Intraday EMA 200
+            "ema_macro": row.get("ema_macro", row["close"]), # Daily Macro Trend
+            "fib_levels": fib_levels,
+            "hour": timestamp.hour
         }
 
         # 1. Team Lead 1: Technical & Quant Analyst
@@ -206,14 +289,10 @@ class MasterOrchestrator:
 
         # Validate minimum decision confidence (60% threshold)
         if decision in ["BUY", "SELL"] and confidence >= 0.60:
-            # S&R Risk Management Setup
-            if getattr(self.config, "USE_FIXED_SL_TP", False):
-                sl_distance = self.config.FIXED_SL_USD
-                tp_distance = self.config.FIXED_TP_USD
-            else:
-                atr = row.get("atr", 2.0)
-                sl_distance = max(atr * 3.5, 12.0)  # Institutional 3.5x ATR stop, min 12 USD
-                tp_distance = sl_distance * self.config.RISK_REWARD_RATIO  # Use custom R:R Ratio from Config
+            # 👑 Boss Sniper Rule: High-Reward 1:3 Ratio for 50% Monthly Growth ($30 TP / $10 SL)
+            sl_distance = 10.0
+            tp_distance = 30.0
+            logger.info(f"   🎯 Boss Sniper Active: Set high-reward {tp_distance}/{sl_distance} (1:3 R:R)")
             
             if decision == "BUY":
                 sl_price = row['close'] - sl_distance
@@ -222,20 +301,74 @@ class MasterOrchestrator:
                 sl_price = row['close'] + sl_distance
                 tp_price = row['close'] - tp_distance
 
-            # Dynamic lot calculation based on account balance and confidence
+            # Dynamic Risk-Based Position Sizing (Money Management)
             balance = self.backtester.current_balance
-            lot_size = max(0.01, self.config.BASE_LOT_SIZE * (confidence / 0.8))
-
-            logger.info(f"   ➜ Executing {decision} | Sizing: {lot_size:.2f} | SL: {sl_price:.2f} | TP: {tp_price:.2f}")
+            contract_size = 100.0  # Standard MT5 Gold Contract Size
             
-            trade_executed = self.backtester.execute_trade(
-                timestamp=str(timestamp),
-                price=row['close'],
-                signal=decision,
-                position_size=lot_size,
-                stop_loss=sl_price,
-                take_profit=tp_price
-            )
+            fixed_lot = getattr(self.config, "FIXED_LOT_SIZE", 1.0)
+            if fixed_lot and float(fixed_lot) > 0:
+                lot_size = float(fixed_lot)
+            else:
+                # User Master Directive: Risk exactly 15% of portfolio per trade to scale monthly profit to $130+ USD (13,000+ Cents)
+                risk_percent = getattr(self.config, "POSITION_SIZE_PERCENT", 15.0)
+                risk_amount = balance * (risk_percent / 100.0)
+                computed_lot = risk_amount / (sl_distance * contract_size)
+                lot_size = max(0.01, round(computed_lot, 2))
+            
+            # Conviction-Based Scaling: Increase lot size if CEO is extremely confident
+            ceo_confidence = ceo_res.get("confidence", 0.85)
+            if ceo_confidence >= 0.95:
+                lot_size *= 1.50
+                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.5x)")
+            elif ceo_confidence >= 0.90:
+                lot_size *= 1.20
+                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.2x)")
+
+            actual_risk_usd = sl_distance * lot_size * contract_size
+            if balance < actual_risk_usd * 4:
+                logger.warning(f"   ⚠️ WARNING: Balance (${balance:.2f}) is extremely low! Min risk/trade is ${actual_risk_usd:.2f} ({actual_risk_usd/balance*100:.1f}% of port). Recommend switching to a Cent Account.")
+
+            logger.info(f"   ➜ Executing {decision} | Sizing: {lot_size:.2f} | Risk per trade: ${actual_risk_usd:.2f} ({actual_risk_usd/balance*100:.1f}%) | SL: {sl_price:.2f} | TP: {tp_price:.2f}")
+            
+            if self.mode == "LIVE":
+                logger.info(f"   ⚡ LIVE MODE: Sending order directly to MT5 terminal: {decision} {lot_size:.2f} Lot...")
+                live_order = self.mt5_connector.execute_market_order(
+                    signal=decision,
+                    volume=lot_size,
+                    stop_loss=sl_price,
+                    take_profit=tp_price
+                )
+                trade_executed = live_order is not None
+                
+                # 📢 DISCORD REPORT: Order Opened
+                if trade_executed:
+                    try:
+                        self.discord_reporter.report_order_opened(
+                            signal=decision,
+                            entry_price=row['close'],
+                            sl_price=sl_price,
+                            tp_price=tp_price,
+                            lot_size=lot_size,
+                            ticket=live_order.get('ticket') if live_order else None,
+                            confidence=confidence,
+                            regime=regime,
+                            quant_summary=quant_res.get('technical_summary', 'N/A'),
+                            news_summary=news_res.get('fundamental_bias', 'N/A'),
+                            bull_argument=bull_res.get('reasoning', 'N/A'),
+                            bear_argument=bear_res.get('reasoning', 'N/A'),
+                            ceo_reasoning=reasoning
+                        )
+                    except Exception as dr_err:
+                        logger.error(f"Discord report failed: {dr_err}")
+            else:
+                trade_executed = self.backtester.execute_trade(
+                    timestamp=str(timestamp),
+                    price=row['close'],
+                    signal=decision,
+                    position_size=lot_size,
+                    stop_loss=sl_price,
+                    take_profit=tp_price
+                )
             analysis_record["trade_executed"] = trade_executed
             if trade_executed:
                 self.trades_today += 1
@@ -252,6 +385,12 @@ class MasterOrchestrator:
         )
 
         self.analysis_history.append(analysis_record)
+        try:
+            import json
+            with open("trade_history_log.json", "w", encoding="utf-8") as f:
+                json.dump(self.analysis_history, f, indent=2, default=str)
+        except Exception as e:
+            logger.error(f"Failed to persist trade_history_log.json: {e}")
         return analysis_record
 
     def run_backtest(self, sample_every_n: int = 24) -> str:
@@ -299,6 +438,14 @@ class MasterOrchestrator:
 
         logger.info("✅ Connection established! Monitoring XAU/USD in real-time...")
         
+        # 📢 DISCORD REPORT: System Online (Check if connection works)
+        try:
+            self.discord_reporter.report_system_status(
+                title="🚀 GOLD SNIPER AI: ONLINE",
+                message="บอทเริ่มทำงานในโหมด LIVE เรียบร้อยแล้วครับ!\nสแตนด์บายเฝ้าทองคำด้วยกลยุทธ์ Boss Sniper 1:3 🏹"
+            )
+        except: pass
+        
         while True:
             try:
                 prices = self.mt5_connector.get_price()
@@ -308,7 +455,8 @@ class MasterOrchestrator:
                     continue
                 
                 current_price = prices["ask"]
-                logger.info(f"\n[{datetime.now()}] Current Ask Price: {current_price:.2f}")
+                now = datetime.now()
+                logger.info(f"\n[{now}] Current Ask Price: {current_price:.2f}")
 
                 # Fetch recent historical data from yfinance for technical indicators
                 df = self.data_handler.prepare_for_analysis(
@@ -332,6 +480,23 @@ class MasterOrchestrator:
                 
                 # Execute analysis
                 self.analyze_at_timestamp(timestamp, latest_row)
+                
+                # 📢 DISCORD REPORT: Periodic Status (Every 3 hours to avoid spam)
+                if self.mode == "LIVE" and now.hour % 3 == 0 and now.minute < interval_minutes:
+                    try:
+                        self.discord_reporter.report_system_status(
+                            title="🟢 AUTO-TRADE STATUS: บอททำงานปกติ",
+                            message=f"สแตนด์บายเฝ้าทองคำ XAU/USD ในตลาดจริง\nราคาทองปัจจุบัน: ${current_price:.2f}"
+                        )
+                    except: pass
+                
+                # Doraemon Scheduled Audit: Every Saturday at 10:00 AM, trigger automated reflection engine
+                if now.weekday() == 5 and now.hour == 10:
+                    try:
+                        from agents import TradeReflectionEngine
+                        TradeReflectionEngine.run_weekly_reflection("trade_history_log.json")
+                    except Exception as ex:
+                        logger.error(f"Reflection trigger failed: {ex}")
 
             except Exception as e:
                 logger.error(f"Error in trading loop: {e}")

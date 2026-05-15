@@ -12,10 +12,12 @@ class Config:
 
     # Trading Settings
     XAU_USD_SYMBOL = os.getenv("XAU_USD_SYMBOL", "GC=F")
+    MT5_SYMBOL = os.getenv("MT5_SYMBOL", "XAUUSD")
     BACKTESTING_START_DATE = os.getenv("BACKTESTING_START_DATE", "2023-01-01")
     BACKTESTING_END_DATE = os.getenv("BACKTESTING_END_DATE", "2024-12-31")
     INITIAL_BALANCE = float(os.getenv("INITIAL_BALANCE", 10000))
     POSITION_SIZE_PERCENT = float(os.getenv("POSITION_SIZE_PERCENT", 2))
+    FIXED_LOT_SIZE = float(os.getenv("FIXED_LOT_SIZE", 1.0))
     MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", 3))
 
     # Risk Management

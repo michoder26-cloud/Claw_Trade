@@ -1,4 +1,5 @@
 """Data fetching and preprocessing for XAU/USD"""
+import os
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -27,15 +28,43 @@ class DataHandler:
             DataFrame with OHLCV data
         """
         try:
-            # Normalize common Gold symbols to yfinance's GC=F (Gold Futures) to prevent download errors
+            start = start or Config.BACKTESTING_START_DATE
+            end = end or Config.BACKTESTING_END_DATE
+            data_source = os.getenv("DATA_SOURCE", "yfinance").lower()
+
+            # 1. Check if MT5 data source is requested
+            if data_source == "mt5":
+                logger.info(f"Attempting to fetch {interval} historical data from MetaTrader 5 server...")
+                try:
+                    from mt5_connector import MT5Connector
+                    mt5_conn = MT5Connector()
+                    df = mt5_conn.fetch_historical_data(start, end, timeframe=interval)
+                    if df is not None and not df.empty:
+                        logger.info(f"✅ Successfully fetched {len(df)} candles from MT5 server!")
+                        # Optionally save to CSV for future offline backtesting
+                        df.to_csv("mt5_historical_data.csv")
+                        return df
+                except Exception as ex:
+                    logger.warning(f"MT5 historical fetch failed: {ex}. Checking local CSV cache...")
+
+                # 2. Check local CSV cache for offline MT5 backtesting
+                if os.path.exists("mt5_historical_data.csv"):
+                    logger.info("Loading historical data from local mt5_historical_data.csv cache...")
+                    df = pd.read_csv("mt5_historical_data.csv", index_col=0, parse_dates=True)
+                    # Filter by requested date range
+                    try:
+                        df = df.loc[start:end]
+                    except Exception:
+                        pass
+                    if not df.empty:
+                        logger.info(f"✅ Loaded {len(df)} cached MT5 candles.")
+                        return df
+
+            # 3. Fallback to Yahoo Finance (yfinance)
             if symbol.upper() in ["XAU/USD", "XAUUSD", "GOLD", "GC=F"]:
                 symbol = "GC=F"
 
-            start = start or Config.BACKTESTING_START_DATE
-            end = end or Config.BACKTESTING_END_DATE
-
-            logger.info(f"Fetching {symbol} data from {start} to {end}...")
-
+            logger.info(f"Fetching {symbol} data from Yahoo Finance ({start} -> {end})...")
             data = yf.download(
                 symbol,
                 start=start,
@@ -44,8 +73,8 @@ class DataHandler:
                 progress=False
             )
 
-            if data.empty:
-                raise ValueError(f"No data found for {symbol}")
+            if data is None or len(data) == 0:
+                raise ValueError(f"No data found for {symbol} on Yahoo Finance (possibly out of interval range).")
 
             # Flatten MultiIndex columns if present (e.g. from yfinance downloads)
             if isinstance(data.columns, pd.MultiIndex):
@@ -53,7 +82,7 @@ class DataHandler:
             else:
                 data.columns = [col.lower() for col in data.columns]
 
-            logger.info(f"Fetched {len(data)} candles")
+            logger.info(f"Fetched {len(data)} candles from Yahoo Finance.")
             return data
 
         except Exception as e:
@@ -78,14 +107,21 @@ class DataHandler:
         df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
         df['macd_hist'] = df['macd'] - df['macd_signal']
 
-        # Bollinger Bands (20-period, 2 std dev)
-        bb_period = 20
+        # Bollinger Bands (14-period, 2 std dev - per boss screenshot)
+        bb_period = 14
         bb_std = 2
         df['bb_middle'] = df['close'].rolling(window=bb_period).mean()
         bb_std_dev = df['close'].rolling(window=bb_period).std()
         df['bb_upper'] = df['bb_middle'] + (bb_std_dev * bb_std)
         df['bb_lower'] = df['bb_middle'] - (bb_std_dev * bb_std)
 
+        # Boss Specific Moving Averages
+        df['ema_5'] = df['close'].ewm(span=5, adjust=False).mean()
+        df['sma_36'] = df['close'].rolling(window=36).mean()
+        df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
+        df['ema_200'] = df['close'].ewm(span=200, adjust=False).mean()
+        df['ema_macro'] = df['close'].ewm(span=288, adjust=False).mean()
+        
         # ATR (Average True Range) - 14 period
         df['high_low'] = df['high'] - df['low']
         df['high_close'] = abs(df['high'] - df['close'].shift())
@@ -99,14 +135,14 @@ class DataHandler:
         return df.dropna()
 
     @staticmethod
-    def prepare_for_analysis(symbol: str = "GC=F", start: str = None, end: str = None) -> pd.DataFrame:
+    def prepare_for_analysis(symbol: str = "GC=F", start: str = None, end: str = None, interval: str = "1h") -> pd.DataFrame:
         """
         Complete pipeline: fetch + calculate indicators
 
         Returns:
             DataFrame ready for analysis
         """
-        df = DataHandler.fetch_gold_price(symbol, start, end)
+        df = DataHandler.fetch_gold_price(symbol, start, end, interval=interval)
         df = DataHandler.calculate_technical_indicators(df)
         return df
 

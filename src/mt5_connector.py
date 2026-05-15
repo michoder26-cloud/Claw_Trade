@@ -1,6 +1,7 @@
 """MetaTrader 5 Connector for XAU/USD Trading Automation"""
 import os
 import logging
+import pandas as pd
 from typing import Dict, Optional
 
 try:
@@ -15,7 +16,8 @@ class MT5Connector:
     """Manages connection and order execution on MetaTrader 5"""
 
     def __init__(self):
-        self.symbol = os.getenv("XAU_USD_SYMBOL", "XAUUSD").replace("/", "").replace("GC=F", "XAUUSD")
+        # Priority: 1. MT5_SYMBOL, 2. XAU_USD_SYMBOL (with cleanup), 3. Default "XAUUSD"
+        self.symbol = os.getenv("MT5_SYMBOL") or os.getenv("XAU_USD_SYMBOL", "XAUUSD").replace("/", "").replace("GC=F", "XAUUSD")
         self.login_id = os.getenv("MT5_LOGIN")
         self.password = os.getenv("MT5_PASSWORD")
         self.server = os.getenv("MT5_SERVER")
@@ -199,6 +201,13 @@ class MT5Connector:
 
         return closed_count
 
+    def is_position_open(self, ticket: int) -> bool:
+        """Check if a specific position ticket is still active in MT5"""
+        if not self.connect() or mt5 is None:
+            return False
+        pos = mt5.positions_get(ticket=ticket)
+        return pos is not None and len(pos) > 0
+
     def _format_result(self, result) -> Dict:
         """Format order execution result to standard dictionary"""
         return {
@@ -208,6 +217,39 @@ class MT5Connector:
             "price": result.price,
             "comment": result.comment
         }
+
+    def fetch_historical_data(self, start_date: str, end_date: str, timeframe: str = "5m") -> Optional[pd.DataFrame]:
+        """Fetch historical rates from MT5 broker servers"""
+        if not self.connect() or mt5 is None:
+            return None
+
+        timeframe_map = {
+            "1m": mt5.TIMEFRAME_M1,
+            "5m": mt5.TIMEFRAME_M5,
+            "15m": mt5.TIMEFRAME_M15,
+            "1h": mt5.TIMEFRAME_H1,
+            "1d": mt5.TIMEFRAME_D1
+        }
+        tf = timeframe_map.get(timeframe, mt5.TIMEFRAME_M5)
+
+        try:
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            rates = mt5.copy_rates_range(self.symbol, tf, start_dt, end_dt)
+            if rates is None or len(rates) == 0:
+                logger.warning(f"No historical rates found on MT5 server for {self.symbol} ({timeframe}).")
+                return None
+
+            df = pd.DataFrame(rates)
+            df['datetime'] = pd.to_datetime(df['time'], unit='s')
+            df.set_index('datetime', inplace=True)
+            
+            # Rename MT5 columns to match yfinance expected column names
+            df.rename(columns={"tick_volume": "volume"}, inplace=True)
+            return df[['open', 'high', 'low', 'close', 'volume']]
+        except Exception as e:
+            logger.error(f"Error fetching MT5 historical data: {e}")
+            return None
 
     def shutdown(self):
         """Disconnect from MT5"""
