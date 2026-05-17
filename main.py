@@ -51,6 +51,35 @@ def run_backtest(args):
     orchestrator.export_results(output_file)
     logger.info(f"✅ Backtest completed. Results saved to {output_file}")
 
+    # Export summary for multi-timeframe aggregator (run_all_backtests.py)
+    try:
+        stats = orchestrator.backtester.calculate_stats()
+        summary = {
+            "initial_balance": orchestrator.backtester.initial_balance,
+            "final_balance": orchestrator.backtester.current_balance,
+            "net_profit_loss": stats.net_profit,
+            "profit_loss_pct": stats.return_pct,
+            "total_trades": stats.total_trades,
+            "buy_trades": stats.buy_trades,
+            "sell_trades": stats.sell_trades,
+            "winning_trades": stats.winning_trades,
+            "losing_trades": stats.losing_trades,
+            "win_rate": stats.win_rate,
+            "profit_factor": stats.profit_factor,
+            "gross_profit": stats.gross_profit,
+            "gross_loss": stats.gross_loss,
+            "avg_profit_per_trade": stats.avg_profit_per_trade,
+            "max_drawdown": stats.max_drawdown,
+            "max_drawdown_pct": stats.max_drawdown_pct,
+            "sharpe_ratio": stats.sharpe_ratio
+        }
+        import json
+        with open("backtest_summary.json", "w") as f:
+            json.dump(summary, f, indent=2)
+        logger.info("✅ Aggregator summary successfully saved to backtest_summary.json")
+    except Exception as es:
+        logger.error(f"Failed to save backtest_summary.json: {es}")
+
     return orchestrator
 
 def run_paper_trading(args):

@@ -117,17 +117,17 @@ class MasterOrchestrator:
                 return "HIGH_VOLATILITY"
 
         # 2. Liquidity / Volume check
-        volume = latest.get("volume", 1000)
-        avg_volume = recent_data["volume"].tail(20).mean()
-        if avg_volume > 0 and (volume / avg_volume) < 0.35:
-            return "LOW_LIQUIDITY"
+        # volume = latest.get("volume", 1000)
+        # avg_volume = recent_data["volume"].tail(20).mean()
+        # if avg_volume > 0 and (volume / avg_volume) < 0.35:
+        #     return "LOW_LIQUIDITY"
 
         # 3. Trending vs Ranging check (using EMA 50/200 distance and slope)
         ema_50 = latest.get("ema_50", latest["close"])
         ema_200 = latest.get("ema_200", latest["close"])
         ema_diff = abs(ema_50 - ema_200) / ema_200
         
-        if ema_diff > 0.015:
+        if ema_diff > 0.006:
             return "TRENDING"
         else:
             return "RANGING"
@@ -179,6 +179,28 @@ class MasterOrchestrator:
         
         market_context = self.data_handler.format_market_context(hourly_data, n_candles=10)
         
+        # 🛡️ Manage existing open positions BEFORE evaluating new trade signals (Prevents look-behind/same-candle evaluation bias)
+        closed_trades = self.backtester.check_stop_levels(
+            timestamp=str(timestamp),
+            current_price=row['close'],
+            high_price=row.get('high', row['close']),
+            low_price=row.get('low', row['close'])
+        )
+        
+        # 🧠 LEARNING: Update memory with trade results
+        if closed_trades:
+            for trade in closed_trades:
+                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
+                pnl = trade.get("profit_loss", 0)
+                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
+                if outcome == "LOSS":
+                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
+                else:
+                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
+                
+                self.learning_memory.append(lesson)
+                logger.info(f"   🧠 New Lesson Learned: {lesson}")
+
         # Determine regime and fibonacci levels on the DAILY macro scale (50 days)
         regime = self._determine_regime(daily_data)
         fib_levels = self._calculate_fibonacci_levels(daily_data)
@@ -189,9 +211,9 @@ class MasterOrchestrator:
             self.last_trade_date = current_date_str
 
         # 🛡️ Boss Filter 1: Check Daily Trade Limit (Max 1 trade/day)
-        if self.trades_today >= 1:
-            logger.info(f"   ➜ Sniper Engine: Daily limit reached (1 trade max). Standing aside.")
-            return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
+        # if self.trades_today >= 1:
+        #     logger.info(f"   ➜ Sniper Engine: Daily limit reached (1 trade max). Standing aside.")
+        #     return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
 
         # 🛡️ Boss Filter 2: Check Golden Hour Filter (UTC)
         if not self.is_golden_hour(timestamp):
@@ -210,11 +232,11 @@ class MasterOrchestrator:
         logger.info(f"💰 Current Price: {row['close']:.2f}")
 
         # 🛡️ RULE 1: Block trades instantly in low liquidity market regimes to safeguard winrate (allow volatility for day trading)
-        if regime in ["LOW_LIQUIDITY"]:
-            logger.info(f"   ➜ Python Signal Engine blocked trade due to Regime: {regime}")
-            analysis_record["trade_executed"] = False
-            self.analysis_history.append(analysis_record)
-            return analysis_record
+        # if regime in ["LOW_LIQUIDITY"]:
+        #     logger.info(f"   ➜ Python Signal Engine blocked trade due to Regime: {regime}")
+        #     analysis_record["trade_executed"] = False
+        #     self.analysis_history.append(analysis_record)
+        #     return analysis_record
 
         # 🛡️ RULE 2: Block trade if daily limit reached (Expanded for Aggressive Growth)
         max_trades = getattr(self.config, "MAX_DAILY_TRADES", 10)
@@ -275,7 +297,8 @@ class MasterOrchestrator:
             "ema_200": row.get("ema_200", row["close"]), # Intraday EMA 200
             "ema_macro": row.get("ema_macro", row["close"]), # Daily Macro Trend
             "fib_levels": fib_levels,
-            "hour": timestamp.hour
+            "hour": timestamp.hour,
+            "regime": regime
         }
 
         # ⚡ Parallel Execution Stage 1: Primary Analysis
@@ -321,17 +344,14 @@ class MasterOrchestrator:
             "ceo": ceo_res
         }
 
-        # Validate minimum decision confidence (78% threshold for SMC setups)
-        if decision in ["BUY", "SELL"] and confidence >= 0.78:
-            # 👑 Boss Sniper Adaptive Rule: 1:2 Ratio adjusted dynamically based on market volatility
-            if regime == "HIGH_VOLATILITY":
-                sl_distance = 25.0
-                tp_distance = 50.0
-                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:2 R:R)")
-            else:
-                sl_distance = 15.0
-                tp_distance = 30.0
-                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:2 R:R)")
+        # Validate minimum decision confidence (60% threshold for SMC setups)
+        if decision in ["BUY", "SELL"] and confidence >= 0.60:
+            # 👑 Boss Sniper ATR-based Dynamic Stop Loss Rule (1:3 Risk-Reward Ratio for Aggressive Profit)
+            # Adapts automatically to gold's actual volatility in both 2025 ($2600) and 2026 ($4700)
+            atr_val = row.get("atr", 5.0)
+            sl_distance = max(10.0, round(atr_val * 2.5, 1))
+            tp_distance = round(sl_distance * 3.0, 1)
+            logger.info(f"   🎯 Boss Sniper [ATR VOLATILITY MODE]: ATR: {atr_val:.2f} | Dynamic SL: {sl_distance} | Dynamic TP: {tp_distance} (1:3 R:R)")
             
             if decision == "BUY":
                 sl_price = row['close'] - sl_distance
@@ -354,14 +374,14 @@ class MasterOrchestrator:
                 computed_lot = risk_amount / (sl_distance * contract_size)
                 lot_size = max(0.01, round(computed_lot, 2))
             
-            # Aggressive Scaling: Triple lot size if CEO is extremely confident
+            # Conviction-Based Scaling: Increase lot size if CEO is extremely confident (Safe 1.2x and 1.5x limits)
             ceo_confidence = ceo_res.get("confidence", 0.85)
             if ceo_confidence >= 0.95:
-                lot_size *= 3.0  # Triple power
-                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (3x)")
+                lot_size *= 1.50
+                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.5x)")
             elif ceo_confidence >= 0.90:
-                lot_size *= 2.0  # Double power
-                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
+                lot_size *= 1.20
+                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.2x)")
 
             actual_risk_usd = sl_distance * lot_size * contract_size
             if balance < actual_risk_usd * 4:
@@ -414,28 +434,6 @@ class MasterOrchestrator:
         else:
             logger.info("   ➜ Skipping: NO_TRADE or Low Confidence")
             analysis_record["trade_executed"] = False
-
-        # Manage open backtest positions and capture feedback
-        closed_trades = self.backtester.check_stop_levels(
-            timestamp=str(timestamp),
-            current_price=row['close'],
-            high_price=row.get('high', row['close']),
-            low_price=row.get('low', row['close'])
-        )
-        
-        # 🧠 LEARNING: Update memory with trade results
-        if closed_trades:
-            for trade in closed_trades:
-                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
-                pnl = trade.get("profit_loss", 0)
-                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
-                if outcome == "LOSS":
-                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
-                else:
-                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
-                
-                self.learning_memory.append(lesson)
-                logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
         self.analysis_history.append(analysis_record)
         try:

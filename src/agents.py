@@ -136,11 +136,10 @@ class QuantAnalyst:
 
     def analyze(self, market_context: str, indicators: Dict[str, Any]) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            # MMTC v2.0 Regime-Adaptive Quant Logic
+            # Use high-fidelity regime determined by the orchestrator
+            regime = indicators.get("regime", "RANGING")
             ema_50 = indicators.get("ema_50", indicators.get("close", 0))
             ema_200 = indicators.get("ema_200", indicators.get("close", 0))
-            ema_diff = abs(ema_50 - ema_200) / ema_200 if ema_200 > 0 else 0
-            regime = "TRENDING" if ema_diff > 0.015 else "RANGING"
 
             return {
                 "trend": "bullish" if indicators.get("close", 0) > indicators.get("ema_200", 0) else "bearish",
@@ -273,28 +272,35 @@ class BullAgent:
             bb_lower = quant_analysis.get("bb_lower", 0.0)
             ema_50 = quant_analysis.get("ema_50", 0.0)
             ema_200 = quant_analysis.get("ema_200", 0.0)
+            macro_trend = quant_analysis.get("macro_trend", "bullish")
 
             signal = "HOLD"
             confidence = 0.40
             reasoning = "MMTC v2.0: No high-probability institutional BUY setups detected."
 
-            if regime == "RANGING":
+            if regime in ["RANGING", "HIGH_VOLATILITY"]:
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                if fibo_zone == "all_in_market_maker" and rsi < 40 and macd_cross != "bearish_cross":
+                # Daily Macro Trend Guard: Only buy during macro uptrend to avoid structural bear traps
+                # Momentum/Waterfall protection: Do not buy if RSI < 32 (waterfall drop)
+                if fibo_zone == "all_in_market_maker" and 32 <= rsi < 40 and macd_cross != "bearish_cross" and macro_trend == "bullish":
                     signal = "BUY"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is oversold. Strong institutional liquidity sweep expected."
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Lower support + oversold)
-                elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and rsi < 42:
+                # Daily Macro Trend Guard: Only buy during macro uptrend to protect against deep corrections
+                # Momentum Protection: Do not buy if MACD has recently made a bearish crossover or RSI < 32
+                elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and 32 <= rsi < 42 and macro_trend == "bullish" and macd_cross != "bearish_cross":
                     signal = "BUY"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Lower Limit in Discount Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                if close > ema_50 and close > ema_200 and rsi > 52 and macd_cross == "bullish_cross":
+                # Double-bounded RSI Filter: Only ride momentum in sweet spot, prevent buying the absolute peak (RSI >= 61)
+                # Trend Momentum Trigger: Support both fresh crossover and active bullish MACD state
+                if close > ema_50 and close > ema_200 and 52 < rsi < 61 and (macd_cross == "bullish_cross" or quant_analysis.get("macd_state") == "bullish"):
                     signal = "BUY"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Trending Breakout]: Strong trending ride. Price is above EMA 50 & 200 with bullish MACD crossover."
+                    reasoning = f"MMTC v2.0 [Trending Breakout]: Strong trending ride. Price is above EMA 50 & 200 with active bullish MACD momentum."
 
             return AnalysisResult(
                 agent_name="BullishStrategist",
@@ -354,28 +360,34 @@ class BearAgent:
             bb_upper = quant_analysis.get("bb_upper", 0.0)
             ema_50 = quant_analysis.get("ema_50", 0.0)
             ema_200 = quant_analysis.get("ema_200", 0.0)
+            macro_trend = quant_analysis.get("macro_trend", "bullish")
 
             signal = "HOLD"
             confidence = 0.40
             reasoning = "MMTC v2.0: No high-probability institutional SELL setups detected."
 
-            if regime == "RANGING":
+            if regime in ["RANGING", "HIGH_VOLATILITY"]:
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                if fibo_zone == "all_in_market_maker" and rsi > 60 and macd_cross != "bullish_cross":
+                # Parabolic Breakout protection: Do not short if RSI > 68 (strong trend breakout)
+                if fibo_zone == "all_in_market_maker" and 60 < rsi <= 68 and macd_cross != "bullish_cross":
                     signal = "SELL"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is overbought. Strong institutional liquidity sweep expected."
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Upper resistance + overbought)
-                elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and rsi > 58:
+                # Counter-trend protection: Standard RSI > 58 to capture maximum ranging swings, max 68 to prevent vertical breakouts
+                # Momentum Protection: Do not sell if MACD has recently made a bullish crossover
+                elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and 58 < rsi <= 68 and macd_cross != "bullish_cross":
                     signal = "SELL"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Upper Limit in Premium Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                if close < ema_50 and close < ema_200 and rsi < 48 and macd_cross == "bearish_cross":
+                # Double-bounded RSI Filter: Only short momentum in sweet spot, prevent selling the absolute bottom (RSI <= 39)
+                # Trend Momentum Trigger: Support both fresh crossover and active bearish MACD state
+                if close < ema_50 and close < ema_200 and 39 < rsi < 48 and (macd_cross == "bearish_cross" or quant_analysis.get("macd_state") == "bearish"):
                     signal = "SELL"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Trending Breakdown]: Strong trending ride. Price is below EMA 50 & 200 with bearish MACD crossover."
+                    reasoning = f"MMTC v2.0 [Trending Breakdown]: Strong trending ride. Price is below EMA 50 & 200 with active bearish MACD momentum."
 
             return AnalysisResult(
                 agent_name="BearishStrategist",
@@ -429,8 +441,8 @@ class CEOAgent:
             bull_conf = bull_case.get("conviction_score", 0)
             bear_conf = bear_case.get("conviction_score", 0)
             
-            # MMTC v2.0 High-Probability Threshold (>= 0.78 for institutional setups)
-            threshold = 0.78
+            # MMTC v2.0 High-Probability Threshold (>= 0.60 for institutional setups)
+            threshold = 0.60
             if bull_conf > bear_conf and bull_conf >= threshold:
                 decision, confidence = "BUY", bull_conf
                 reason = f"Approved BUY setup: {bull_case.get('reasoning', '')}"
