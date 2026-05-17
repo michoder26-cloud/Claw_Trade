@@ -8,7 +8,9 @@ load_dotenv(override=True)
 
 class Config:
     """Base configuration"""
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-70b-instruct")
 
     # Trading Settings
     XAU_USD_SYMBOL = os.getenv("XAU_USD_SYMBOL", "GC=F")
@@ -16,9 +18,9 @@ class Config:
     BACKTESTING_START_DATE = os.getenv("BACKTESTING_START_DATE", "2023-01-01")
     BACKTESTING_END_DATE = os.getenv("BACKTESTING_END_DATE", "2024-12-31")
     INITIAL_BALANCE = float(os.getenv("INITIAL_BALANCE", 10000))
-    POSITION_SIZE_PERCENT = float(os.getenv("POSITION_SIZE_PERCENT", 2))
-    FIXED_LOT_SIZE = float(os.getenv("FIXED_LOT_SIZE", 1.0))
-    MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", 3))
+    POSITION_SIZE_PERCENT = float(os.getenv("POSITION_SIZE_PERCENT", 25.0))
+    FIXED_LOT_SIZE = float(os.getenv("FIXED_LOT_SIZE", 0.0)) # Use 0 to enable dynamic scaling
+    MAX_DAILY_TRADES = int(os.getenv("MAX_DAILY_TRADES", 10))
 
     # Risk Management
     MAX_DRAWDOWN_PERCENT = float(os.getenv("MAX_DRAWDOWN_PERCENT", 10))
@@ -37,15 +39,11 @@ class Config:
     SLACK_WEBHOOK_URL: Optional[str] = os.getenv("SLACK_WEBHOOK_URL")
     EMAIL_RECIPIENT: Optional[str] = os.getenv("EMAIL_RECIPIENT")
 
-    # Claude Models
-    ORCHESTRATOR_MODEL = "claude-opus-4-7"
-    ANALYST_MODEL = "claude-opus-4-7"
-
     @classmethod
     def validate(cls) -> bool:
         """Validate required configurations"""
-        if not cls.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY is required")
+        if not cls.OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY is required")
         return True
 
 class BacktestConfig(Config):

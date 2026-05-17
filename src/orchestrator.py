@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import time
 import os
 
@@ -60,15 +61,16 @@ class MasterOrchestrator:
         self.market_data: Optional[pd.DataFrame] = None
         self.analysis_history: List[Dict] = []
         
-        # Track daily trades to reduce overtrading
+        # Learning Memory (Stores lessons from past trades)
+        self.learning_memory: List[str] = []
         self.trades_today = 0
         self.last_trade_date: Optional[str] = None
 
         logger.info(f"Hierarchical Orchestrator initialized in {mode} mode")
 
-    def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None) -> pd.DataFrame:
+    def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None, interval: str = None) -> pd.DataFrame:
         """Load and prepare market data with 30-day indicator warmup buffer"""
-        logger.info("Loading market data...")
+        logger.info(f"Loading market data with interval: {interval}...")
         fetch_start = start
         if start:
             try:
@@ -76,7 +78,8 @@ class MasterOrchestrator:
             except Exception:
                 fetch_start = start
 
-        interval = os.getenv("YFINANCE_INTERVAL", "5m")
+        if not interval:
+            interval = os.getenv("YFINANCE_INTERVAL", "5m")
         try:
             self.market_data = self.data_handler.prepare_for_analysis(symbol, fetch_start, end, interval=interval)
         except Exception as e:
@@ -149,6 +152,24 @@ class MasterOrchestrator:
             "100.0% (Low)": round(low, 2)
         }
 
+    def is_golden_hour(self, current_time: datetime) -> bool:
+        """
+        Expanded Golden Hour Filter (UTC) for H1 Strategy:
+        - Tokyo/London Transition: 04:00 - 10:59 UTC
+        - New York Main Session: 12:00 - 17:59 UTC
+        """
+        hour = current_time.hour
+        
+        # Window 1: Asia/London Sniper (04:00 - 10:59 UTC)
+        if 4 <= hour <= 10:
+            return True
+            
+        # Window 2: NY Sniper (12:00 - 17:59 UTC)
+        if 12 <= hour <= 17:
+            return True
+            
+        return False
+
     def analyze_at_timestamp(self, timestamp: pd.Timestamp, row: pd.Series) -> Dict:
         """Runs the complete hierarchical 5-Agent pipeline at a given timestamp"""
         # Multi-Timeframe Integration:
@@ -168,6 +189,16 @@ class MasterOrchestrator:
             self.trades_today = 0
             self.last_trade_date = current_date_str
 
+        # 🛡️ Boss Filter 1: Check Daily Trade Limit (Max 1 trade/day)
+        if self.trades_today >= 1:
+            logger.info(f"   ➜ Sniper Engine: Daily limit reached (1 trade max). Standing aside.")
+            return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
+
+        # 🛡️ Boss Filter 2: Check Golden Hour Filter (UTC)
+        if not self.is_golden_hour(timestamp):
+            logger.info(f"   ➜ Sniper Engine: Outside Golden Hours (Hour: {timestamp.hour} UTC). Standing aside.")
+            return {"status": "SKIPPED", "reason": "OUTSIDE_GOLDEN_HOURS"}
+
         analysis_record = {
             "timestamp": str(timestamp),
             "price": row['close'],
@@ -186,8 +217,8 @@ class MasterOrchestrator:
             self.analysis_history.append(analysis_record)
             return analysis_record
 
-        # 🛡️ RULE 2: Block trade if daily limit reached
-        max_trades = getattr(self.config, "MAX_DAILY_TRADES", 3)
+        # 🛡️ RULE 2: Block trade if daily limit reached (Expanded for Aggressive Growth)
+        max_trades = getattr(self.config, "MAX_DAILY_TRADES", 10)
         if self.trades_today >= max_trades:
             logger.info(f"   ➜ Python Signal Engine blocked trade: Daily Trade Limit ({max_trades}) reached!")
             analysis_record["trade_executed"] = False
@@ -248,29 +279,33 @@ class MasterOrchestrator:
             "hour": timestamp.hour
         }
 
-        # 1. Team Lead 1: Technical & Quant Analyst
-        logger.info("🔍 Running Quant Technical Analysis (No trade decision)...")
-        quant_res = self.quant_analyst.analyze(market_context, indicators)
-        logger.info(f"   ➜ Quant Summary: {quant_res.get('technical_summary', '')[:80]}...")
+        # ⚡ Parallel Execution Stage 1: Primary Analysis
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_quant = executor.submit(self.quant_analyst.analyze, market_context, indicators)
+            future_news = executor.submit(self.news_analyst.analyze)
+            
+            quant_res = future_quant.result()
+            news_res = future_news.result()
 
-        # 2. Team Lead 2: News & Fundamental Analyst
-        logger.info("📰 Running Fundamental News Analysis (No trade decision)...")
-        news_res = self.news_analyst.analyze()
-        logger.info(f"   ➜ News Sentiment: {news_res.get('fundamental_bias', 'neutral')}")
-
-        # 3. Advocate 1: Bull Agent (Argument FOR Buying)
-        logger.info("🐂 Running Bull Agent (Biased BUY Advocate)...")
-        bull_res = self.bull_agent.advocate(quant_res, news_res)
-        logger.info(f"   ➜ Bull Conviction: {bull_res.get('conviction_score', 0.0)}")
-
-        # 4. Advocate 2: Bear Agent (Argument FOR Selling)
-        logger.info("🐻 Running Bear Agent (Biased SELL Advocate)...")
-        bear_res = self.bear_agent.advocate(quant_res, news_res)
-        logger.info(f"   ➜ Bear Conviction: {bear_res.get('conviction_score', 0.0)}")
+        # ⚡ Parallel Execution Stage 2: Advocates Analysis
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_bull = executor.submit(self.bull_agent.advocate, quant_res, news_res)
+            future_bear = executor.submit(self.bear_agent.advocate, quant_res, news_res)
+            
+            bull_res = future_bull.result()
+            bear_res = future_bear.result()
 
         # 5. Supreme Decision Maker: Unbiased CEO
         logger.info("👔 CEO Agent balancing arguments and finalizing decision...")
-        ceo_res = self.ceo_agent.decide(quant_res, news_res, bull_res, bear_res, regime)
+        # Prepare cases as dictionaries for CEO Agent compatibility
+        # 5. Supreme Decision Maker: Unbiased CEO
+        logger.info("👔 CEO Agent balancing arguments and finalizing decision...")
+        # Prepare cases as dictionaries for CEO Agent compatibility
+        bull_case = {"conviction_score": bull_res.confidence, "reasoning": bull_res.reasoning}
+        bear_case = {"conviction_score": bear_res.confidence, "reasoning": bear_res.reasoning}
+        
+        # 🧠 FEEDBACK LOOP: Incorporate past lessons
+        ceo_res = self.ceo_agent.decide(quant_res, news_res, bull_case, bear_case, regime, self.learning_memory)
         
         decision = ceo_res.get("decision", "NO_TRADE")
         confidence = ceo_res.get("confidence", 0.5)
@@ -282,17 +317,22 @@ class MasterOrchestrator:
         analysis_record["agents_analysis"] = {
             "quant": quant_res,
             "news": news_res,
-            "bull": bull_res,
-            "bear": bear_res,
+            "bull": bull_case,
+            "bear": bear_case,
             "ceo": ceo_res
         }
 
-        # Validate minimum decision confidence (60% threshold)
-        if decision in ["BUY", "SELL"] and confidence >= 0.60:
-            # 👑 Boss Sniper Rule: High-Reward 1:3 Ratio for 50% Monthly Growth ($30 TP / $10 SL)
-            sl_distance = 10.0
-            tp_distance = 30.0
-            logger.info(f"   🎯 Boss Sniper Active: Set high-reward {tp_distance}/{sl_distance} (1:3 R:R)")
+        # Validate minimum decision confidence (78% threshold for SMC setups)
+        if decision in ["BUY", "SELL"] and confidence >= 0.78:
+            # 👑 Boss Sniper Adaptive Rule: 1:2 Ratio adjusted dynamically based on market volatility
+            if regime == "HIGH_VOLATILITY":
+                sl_distance = 25.0
+                tp_distance = 50.0
+                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:2 R:R)")
+            else:
+                sl_distance = 15.0
+                tp_distance = 30.0
+                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:2 R:R)")
             
             if decision == "BUY":
                 sl_price = row['close'] - sl_distance
@@ -315,14 +355,14 @@ class MasterOrchestrator:
                 computed_lot = risk_amount / (sl_distance * contract_size)
                 lot_size = max(0.01, round(computed_lot, 2))
             
-            # Conviction-Based Scaling: Increase lot size if CEO is extremely confident
+            # Aggressive Scaling: Triple lot size if CEO is extremely confident
             ceo_confidence = ceo_res.get("confidence", 0.85)
             if ceo_confidence >= 0.95:
-                lot_size *= 1.50
-                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.5x)")
+                lot_size *= 3.0  # Triple power
+                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (3x)")
             elif ceo_confidence >= 0.90:
-                lot_size *= 1.20
-                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.2x)")
+                lot_size *= 2.0  # Double power
+                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
 
             actual_risk_usd = sl_distance * lot_size * contract_size
             if balance < actual_risk_usd * 4:
@@ -376,13 +416,27 @@ class MasterOrchestrator:
             logger.info("   ➜ Skipping: NO_TRADE or Low Confidence")
             analysis_record["trade_executed"] = False
 
-        # Manage open backtest positions
-        self.backtester.check_stop_levels(
+        # Manage open backtest positions and capture feedback
+        closed_trades = self.backtester.check_stop_levels(
             timestamp=str(timestamp),
             current_price=row['close'],
             high_price=row.get('high', row['close']),
             low_price=row.get('low', row['close'])
         )
+        
+        # 🧠 LEARNING: Update memory with trade results
+        if closed_trades:
+            for trade in closed_trades:
+                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
+                pnl = trade.get("profit_loss", 0)
+                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
+                if outcome == "LOSS":
+                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
+                else:
+                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
+                
+                self.learning_memory.append(lesson)
+                logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
         self.analysis_history.append(analysis_record)
         try:

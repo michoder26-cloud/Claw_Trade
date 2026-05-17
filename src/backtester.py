@@ -113,9 +113,21 @@ class Backtester:
         closed_positions = []
 
         for trade in self.open_positions:
+            # 1. Update Trailing Stop / Breakeven Logic FIRST: If profit conditions met, move SL to entry + $6 (lock massive profit)
+            if not trade.trailed:
+                if trade.signal == "BUY" and (high_price - trade.entry_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price + 6.0
+                    trade.trailed = True
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +$6)")
+                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price - 6.0
+                    trade.trailed = True
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +$6)")
+
             exit_price = None
             exit_reason = None
 
+            # 2. Check if open positions hit stop-loss or take-profit levels using the UPDATED stop_loss
             if trade.signal == "BUY":
                 if low_price <= trade.stop_loss:
                     exit_price = trade.stop_loss
@@ -132,17 +144,6 @@ class Backtester:
                     exit_price = trade.take_profit
                     exit_reason = "TAKE_PROFIT"
 
-            # Trailing Stop / Breakeven Logic: If profit > $10, move SL to entry + $2 (lock profit)
-            if not trade.trailed:
-                if trade.signal == "BUY" and (high_price - trade.entry_price) >= 10.0:
-                    trade.stop_loss = trade.entry_price + 2.0
-                    trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +$2)")
-                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= 10.0:
-                    trade.stop_loss = trade.entry_price - 2.0
-                    trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +$2)")
-
             if exit_price:
                 trade.close(exit_price, timestamp)
                 self.current_balance += trade.profit_loss
@@ -155,6 +156,7 @@ class Backtester:
             self.open_positions.remove(trade)
 
         self.equity_curve.append(self.current_balance)
+        return [t.__dict__ for t in closed_positions]
 
     def close_all_positions(self, timestamp: str, current_price: float):
         """Force close all open positions at market price"""

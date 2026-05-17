@@ -31,10 +31,17 @@ def run_backtest(args):
     logger.info("🧪 Starting Backtest Mode")
 
     orchestrator = MasterOrchestrator(mode="BACKTEST")
+    
+    # Ensure interval has units (m/h/d)
+    interval = args.interval
+    if interval.isdigit():
+        interval = f"{interval}m" if int(interval) < 60 else "1h"
+        
     orchestrator.load_market_data(
         symbol=args.symbol or "GC=F",
         start=args.start_date,
-        end=args.end_date
+        end=args.end_date,
+        interval=interval
     )
 
     report = orchestrator.run_backtest(sample_every_n=args.sample_rate)
@@ -78,9 +85,10 @@ def main():
     # Backtest command
     backtest_parser = subparsers.add_parser('backtest', help='Run backtesting')
     backtest_parser.add_argument('--symbol', default='GC=F', help='Trading symbol (default: GC=F)')
+    backtest_parser.add_argument('--interval', default='1h', help='Trading interval (5, 15, 60 or 5m, 15m, 1h)')
     backtest_parser.add_argument('--start-date', help='Start date (YYYY-MM-DD)')
     backtest_parser.add_argument('--end-date', help='End date (YYYY-MM-DD)')
-    backtest_parser.add_argument('--sample-rate', type=int, default=24, help='Sample every N candles (default: 24)')
+    backtest_parser.add_argument('--sample-rate', type=int, default=1, help='Sample every N candles (default: 1)')
     backtest_parser.add_argument('--output', help='Output file for results (default: backtest_results.json)')
 
     # Paper trading command
@@ -115,7 +123,7 @@ def main():
         run_live_trading(args)
     elif args.command == 'config':
         logger.info("Current Configuration:")
-        logger.info(f"  API Key: {'✓ Set' if Config.ANTHROPIC_API_KEY else '✗ Not set'}")
+        logger.info(f"  OpenRouter API Key: {'✓ Set' if Config.OPENROUTER_API_KEY else '✗ Not set'}")
         logger.info(f"  Trading Mode: {getattr(args, 'mode', 'BACKTEST')}")
         logger.info(f"  Initial Balance: ${Config.INITIAL_BALANCE:,.2f}")
         logger.info(f"  Max Drawdown: {Config.MAX_DRAWDOWN_PERCENT}%")
