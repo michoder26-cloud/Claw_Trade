@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 import re
 
-def call_openrouter_api(prompt: str, model: str = "meta-llama/llama-3.1-8b-instruct:free", max_tokens: int = 4000) -> Dict[str, Any]:
+def call_openrouter_api(prompt: str, model: str = None, max_tokens: int = 4000) -> Dict[str, Any]:
+    if not model:
+        model = Config.OPENROUTER_MODEL or "meta-llama/llama-3.1-8b-instruct:free"
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key or api_key.startswith("sk-or-v1-xxxxx"):
         raise ValueError("OPENROUTER_API_KEY is not configured properly")
@@ -33,7 +35,30 @@ def call_openrouter_api(prompt: str, model: str = "meta-llama/llama-3.1-8b-instr
         "max_tokens": max_tokens
     }
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=120)
+    import time
+    max_retries = 5
+    backoff = 2
+    resp = None
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+            if resp.status_code == 200:
+                break
+            elif resp.status_code == 429 or resp.status_code >= 500:
+                logger.warning(f"OpenRouter returned HTTP {resp.status_code}. Retrying in {backoff}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(backoff)
+                backoff *= 2
+            else:
+                raise ValueError(f"OpenRouter HTTP {resp.status_code}: {resp.text}")
+        except requests.exceptions.RequestException as req_err:
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"Request error: {req_err}. Retrying in {backoff}s... (Attempt {attempt+1}/{max_retries})")
+            time.sleep(backoff)
+            backoff *= 2
+    else:
+        raise ValueError(f"Failed to get successful response from OpenRouter after {max_retries} attempts.")
+
     if resp.status_code == 200:
         data = resp.json()
         raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -106,8 +131,8 @@ class QuantAnalyst:
     """Focuses strictly on math and technical indicators without choosing a final trade direction."""
     
     def __init__(self):
-        # Switched to Gemini for speed
-        self.model = "google/gemini-2.0-flash-exp:free"
+        # Switched to DeepSeek v4 Flash for active free-tier reliability
+        self.model = "deepseek/deepseek-v4-flash:free"
 
     def analyze(self, market_context: str, indicators: Dict[str, Any]) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -169,7 +194,7 @@ Provide your objective technical analysis in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, max_tokens=4000)
+            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
         except Exception as e:
             logger.error(f"OpenRouter Quant Analysis failed: {e}")
             # Fallback to mock logic if AI fails to save the trade flow
@@ -184,7 +209,7 @@ class NewsAnalyst:
     """Analyzes fundamentals strictly focusing on major high-impact events like the Fed, rates, and yields."""
 
     def __init__(self):
-        self.model = "meta-llama/llama-3.1-8b-instruct:free"
+        self.model = "deepseek/deepseek-v4-flash:free"
 
     def analyze(self, news_text: str = "") -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -225,7 +250,7 @@ Provide your analysis in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, max_tokens=4000)
+            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
         except Exception as e:
             logger.error(f"News Analyst OpenRouter error: {e}")
             return {"fundamental_bias": "neutral", "fundamental_summary": f"OpenRouter Error: {e}"}
@@ -235,7 +260,7 @@ class BullAgent:
     """Prosecuting Attorney for BUY signals. Highly biased to build the strongest BUY case possible."""
 
     def __init__(self):
-        self.model = "meta-llama/llama-3.1-8b-instruct:free"
+        self.model = "deepseek/deepseek-v4-flash:free"
 
     def advocate(self, quant_analysis: Dict, news_analysis: Dict) -> AnalysisResult:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -299,7 +324,7 @@ Output your best BUY case in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            result = call_openrouter_api(prompt, max_tokens=4000)
+            result = call_openrouter_api(prompt, model=self.model, max_tokens=4000)
             return AnalysisResult(
                 agent_name="BullishStrategist",
                 signal=result.get("signal", "HOLD"),
@@ -316,7 +341,7 @@ class BearAgent:
     """Prosecuting Attorney for SELL signals. Highly biased to build the strongest SELL case possible."""
 
     def __init__(self):
-        self.model = "meta-llama/llama-3.1-8b-instruct:free"
+        self.model = "deepseek/deepseek-v4-flash:free"
 
     def advocate(self, quant_analysis: Dict, news_analysis: Dict) -> AnalysisResult:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -380,7 +405,7 @@ Output your best SELL case in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            result = call_openrouter_api(prompt, max_tokens=4000)
+            result = call_openrouter_api(prompt, model=self.model, max_tokens=4000)
             return AnalysisResult(
                 agent_name="BearishStrategist",
                 signal=result.get("signal", "HOLD"),
@@ -397,7 +422,7 @@ class CEOAgent:
     """The Ultimate Decision Maker. Acts as an unbiased, highly experienced mediator."""
 
     def __init__(self):
-        self.model = "meta-llama/llama-3.1-8b-instruct:free"
+        self.model = Config.OPENROUTER_MODEL or "deepseek/deepseek-v4-flash:free"
 
     def decide(self, quant_data: Dict, news_data: Dict, bull_case: Dict, bear_case: Dict, market_regime: str, learning_memory: List[str] = None) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -458,7 +483,7 @@ Provide your final decision in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, max_tokens=4000)
+            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
         except Exception as e:
             logger.error(f"CEO Agent error: {e}")
             return {"decision": "NO_TRADE", "confidence": 0.0, "reasoning": f"Critical error in CEO agent: {e}"}

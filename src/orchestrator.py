@@ -28,7 +28,7 @@ class MasterOrchestrator:
         self.mode = mode
         if mode == "BACKTEST":
             self.config = BacktestConfig
-            os.environ["USE_MOCK_AI"] = "true"
+            os.environ["USE_MOCK_AI"] = os.getenv("USE_MOCK_AI", "True").lower()
         else:
             self.config = Config
             # Ensure live/paper trading respects environment variable
@@ -71,11 +71,14 @@ class MasterOrchestrator:
     def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None, interval: str = None) -> pd.DataFrame:
         """Load and prepare market data with 30-day indicator warmup buffer"""
         logger.info(f"Loading market data with interval: {interval}...")
+        logger.info(f"DEBUG: Input start date received: {start}")
         fetch_start = start
         if start:
             try:
-                fetch_start = (pd.to_datetime(start) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
-            except Exception:
+                fetch_start = (pd.to_datetime(start) - pd.Timedelta(days=90)).strftime("%Y-%m-%d")
+                logger.info(f"DEBUG: Calculated fetch_start (90-day buffer): {fetch_start}")
+            except Exception as e:
+                logger.info(f"DEBUG: Exception during calculation: {e}")
                 fetch_start = start
 
         if not interval:
@@ -92,14 +95,10 @@ class MasterOrchestrator:
         self.market_data['ema_200'] = self.market_data['close'].ewm(span=200, adjust=False).mean()
         self.market_data['ema_macro'] = self.market_data['close'].ewm(span=288, adjust=False).mean() # 12-day Daily Macro Trend Filter
         
-        # Slice to requested start date
-        if start and not self.market_data.empty:
-            try:
-                self.market_data = self.market_data.loc[start:]
-            except Exception:
-                pass
+        # Save the requested start date for backtest evaluation indexing
+        self.backtest_start_date = start
         
-        logger.info(f"Loaded {len(self.market_data)} candles with technical extensions.")
+        logger.info(f"Loaded {len(self.market_data)} candles with technical extensions (including warmup buffer).")
         return self.market_data
 
     def _determine_regime(self, recent_data: pd.DataFrame) -> str:
@@ -455,12 +454,25 @@ class MasterOrchestrator:
         logger.info(f"\n{'#'*60}")
         logger.info("🚀 STARTING HIERARCHICAL MULTI-AGENT BACKTEST")
         logger.info(f"{'#'*60}")
-        logger.info(f"Date Range: {self.market_data.index[0]} to {self.market_data.index[-1]}")
-        logger.info(f"Total Candles: {len(self.market_data)}")
+        
+        # Locate the exact index where backtesting start date begins
+        start_idx = 0
+        if getattr(self, "backtest_start_date", None) is not None:
+            try:
+                start_dt = pd.to_datetime(self.backtest_start_date).tz_localize(self.market_data.index.tz)
+                start_indices = self.market_data.index[self.market_data.index >= start_dt]
+                if not start_indices.empty:
+                    start_idx = self.market_data.index.get_loc(start_indices[0])
+            except Exception as e:
+                logger.error(f"Error locating backtest start index: {e}")
+                start_idx = 0
+
+        logger.info(f"Date Range: {self.market_data.index[start_idx]} to {self.market_data.index[-1]} (Warmup buffer of {start_idx} candles preserved)")
+        logger.info(f"Total Candles evaluated: {len(self.market_data) - start_idx}")
         logger.info(f"Analysis Sample Rate: Every {sample_every_n} candles\n")
 
-        # Run cycle
-        for idx in range(0, len(self.market_data), sample_every_n):
+        # Run cycle starting from the localized start index
+        for idx in range(start_idx, len(self.market_data), sample_every_n):
             timestamp = self.market_data.index[idx]
             row = self.market_data.iloc[idx]
 

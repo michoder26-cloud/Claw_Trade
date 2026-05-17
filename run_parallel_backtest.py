@@ -26,7 +26,7 @@ def run_chunk(start, end, chunk_id):
 if __name__ == "__main__":
     num_chunks = 1
     chunks = [
-        ("2026-01-01", "2026-05-15")
+        ("2026-05-12", "2026-05-15")
     ]
     
     processes = []
