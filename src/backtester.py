@@ -113,20 +113,16 @@ class Backtester:
         closed_positions = []
 
         for trade in self.open_positions:
-            # 1. Update Trailing Stop / Breakeven Logic FIRST: Dynamic Trailing Stop relative to dynamic SL distance
+            # 1. Update Trailing Stop / Breakeven Logic FIRST: If profit conditions met, move SL to entry + $6 (lock massive profit)
             if not trade.trailed:
-                initial_sl_distance = abs(trade.entry_price - trade.stop_loss) if trade.stop_loss > 0 else 10.0
-                activation_distance = initial_sl_distance * 0.70
-                lock_distance = initial_sl_distance * 0.30
-
-                if trade.signal == "BUY" and (high_price - trade.entry_price) >= activation_distance:
-                    trade.stop_loss = trade.entry_price + lock_distance
+                if trade.signal == "BUY" and (high_price - trade.entry_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price + 6.0
                     trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +{lock_distance:.2f})")
-                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= activation_distance:
-                    trade.stop_loss = trade.entry_price - lock_distance
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +$6)")
+                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= 10.0:
+                    trade.stop_loss = trade.entry_price - 6.0
                     trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +{lock_distance:.2f})")
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +$6)")
 
             exit_price = None
             exit_reason = None

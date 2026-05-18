@@ -28,7 +28,7 @@ class MasterOrchestrator:
         self.mode = mode
         if mode == "BACKTEST":
             self.config = BacktestConfig
-            os.environ["USE_MOCK_AI"] = os.getenv("USE_MOCK_AI", "True").lower()
+            os.environ["USE_MOCK_AI"] = "true"
         else:
             self.config = Config
             # Ensure live/paper trading respects environment variable
@@ -71,14 +71,11 @@ class MasterOrchestrator:
     def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None, interval: str = None) -> pd.DataFrame:
         """Load and prepare market data with 30-day indicator warmup buffer"""
         logger.info(f"Loading market data with interval: {interval}...")
-        logger.info(f"DEBUG: Input start date received: {start}")
         fetch_start = start
         if start:
             try:
-                fetch_start = (pd.to_datetime(start) - pd.Timedelta(days=90)).strftime("%Y-%m-%d")
-                logger.info(f"DEBUG: Calculated fetch_start (90-day buffer): {fetch_start}")
-            except Exception as e:
-                logger.info(f"DEBUG: Exception during calculation: {e}")
+                fetch_start = (pd.to_datetime(start) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+            except Exception:
                 fetch_start = start
 
         if not interval:
@@ -95,10 +92,14 @@ class MasterOrchestrator:
         self.market_data['ema_200'] = self.market_data['close'].ewm(span=200, adjust=False).mean()
         self.market_data['ema_macro'] = self.market_data['close'].ewm(span=288, adjust=False).mean() # 12-day Daily Macro Trend Filter
         
-        # Save the requested start date for backtest evaluation indexing
-        self.backtest_start_date = start
+        # Slice to requested start date
+        if start and not self.market_data.empty:
+            try:
+                self.market_data = self.market_data.loc[start:]
+            except Exception:
+                pass
         
-        logger.info(f"Loaded {len(self.market_data)} candles with technical extensions (including warmup buffer).")
+        logger.info(f"Loaded {len(self.market_data)} candles with technical extensions.")
         return self.market_data
 
     def _determine_regime(self, recent_data: pd.DataFrame) -> str:
@@ -117,17 +118,17 @@ class MasterOrchestrator:
                 return "HIGH_VOLATILITY"
 
         # 2. Liquidity / Volume check
-        # volume = latest.get("volume", 1000)
-        # avg_volume = recent_data["volume"].tail(20).mean()
-        # if avg_volume > 0 and (volume / avg_volume) < 0.35:
-        #     return "LOW_LIQUIDITY"
+        volume = latest.get("volume", 1000)
+        avg_volume = recent_data["volume"].tail(20).mean()
+        if avg_volume > 0 and (volume / avg_volume) < 0.35:
+            return "LOW_LIQUIDITY"
 
         # 3. Trending vs Ranging check (using EMA 50/200 distance and slope)
         ema_50 = latest.get("ema_50", latest["close"])
         ema_200 = latest.get("ema_200", latest["close"])
         ema_diff = abs(ema_50 - ema_200) / ema_200
         
-        if ema_diff > 0.006:
+        if ema_diff > 0.015:
             return "TRENDING"
         else:
             return "RANGING"
@@ -179,28 +180,6 @@ class MasterOrchestrator:
         
         market_context = self.data_handler.format_market_context(hourly_data, n_candles=10)
         
-        # 🛡️ Manage existing open positions BEFORE evaluating new trade signals (Prevents look-behind/same-candle evaluation bias)
-        closed_trades = self.backtester.check_stop_levels(
-            timestamp=str(timestamp),
-            current_price=row['close'],
-            high_price=row.get('high', row['close']),
-            low_price=row.get('low', row['close'])
-        )
-        
-        # 🧠 LEARNING: Update memory with trade results
-        if closed_trades:
-            for trade in closed_trades:
-                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
-                pnl = trade.get("profit_loss", 0)
-                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
-                if outcome == "LOSS":
-                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
-                else:
-                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
-                
-                self.learning_memory.append(lesson)
-                logger.info(f"   🧠 New Lesson Learned: {lesson}")
-
         # Determine regime and fibonacci levels on the DAILY macro scale (50 days)
         regime = self._determine_regime(daily_data)
         fib_levels = self._calculate_fibonacci_levels(daily_data)
@@ -211,9 +190,9 @@ class MasterOrchestrator:
             self.last_trade_date = current_date_str
 
         # 🛡️ Boss Filter 1: Check Daily Trade Limit (Max 1 trade/day)
-        # if self.trades_today >= 1:
-        #     logger.info(f"   ➜ Sniper Engine: Daily limit reached (1 trade max). Standing aside.")
-        #     return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
+        if self.trades_today >= 1:
+            logger.info(f"   ➜ Sniper Engine: Daily limit reached (1 trade max). Standing aside.")
+            return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
 
         # 🛡️ Boss Filter 2: Check Golden Hour Filter (UTC)
         if not self.is_golden_hour(timestamp):
@@ -232,11 +211,11 @@ class MasterOrchestrator:
         logger.info(f"💰 Current Price: {row['close']:.2f}")
 
         # 🛡️ RULE 1: Block trades instantly in low liquidity market regimes to safeguard winrate (allow volatility for day trading)
-        # if regime in ["LOW_LIQUIDITY"]:
-        #     logger.info(f"   ➜ Python Signal Engine blocked trade due to Regime: {regime}")
-        #     analysis_record["trade_executed"] = False
-        #     self.analysis_history.append(analysis_record)
-        #     return analysis_record
+        if regime in ["LOW_LIQUIDITY"]:
+            logger.info(f"   ➜ Python Signal Engine blocked trade due to Regime: {regime}")
+            analysis_record["trade_executed"] = False
+            self.analysis_history.append(analysis_record)
+            return analysis_record
 
         # 🛡️ RULE 2: Block trade if daily limit reached (Expanded for Aggressive Growth)
         max_trades = getattr(self.config, "MAX_DAILY_TRADES", 10)
@@ -281,9 +260,40 @@ class MasterOrchestrator:
                 fibo_zone = "all_in_market_maker"
                 logger.info(f"   ➜ Daily Fibo Zone: 🚨 Market Maker All-In Zone (78.6%-88.7%)!")
 
+        # Calculate daily parameters up to the current hour (Wick Fill Theory)
+        current_day_bars = daily_data[daily_data.index.normalize() == timestamp.normalize()]
+        if not current_day_bars.empty:
+            d1_open = current_day_bars['open'].iloc[0]
+            d1_high = current_day_bars['high'].max()
+            d1_low = current_day_bars['low'].min()
+            d1_close = row['close']
+        else:
+            d1_open = row['open']
+            d1_high = row['high']
+            d1_low = row['low']
+            d1_close = row['close']
+
+        # Wicks calculation
+        if d1_close >= d1_open:
+            d1_upper_wick = d1_high - d1_close
+            d1_lower_wick = d1_open - d1_low
+        else:
+            d1_upper_wick = d1_high - d1_open
+            d1_lower_wick = d1_close - d1_low
+
+        # Calculate local Support/Resistance over the last 24 H1 bars (excluding current bar)
+        h1_lookback = daily_data.iloc[:-1].tail(24)
+        if not h1_lookback.empty:
+            local_support = h1_lookback['low'].min()
+            local_resistance = h1_lookback['high'].max()
+        else:
+            local_support = row['low']
+            local_resistance = row['high']
+
         # Collect metrics for Quant Analyst
         indicators = {
             "close": row["close"],
+            "open": row["open"],
             "rsi": row.get("rsi", 50.0),
             "macd": row.get("macd", 0.0),
             "macd_signal": row.get("macd_signal", 0.0),
@@ -298,7 +308,10 @@ class MasterOrchestrator:
             "ema_macro": row.get("ema_macro", row["close"]), # Daily Macro Trend
             "fib_levels": fib_levels,
             "hour": timestamp.hour,
-            "regime": regime
+            "d1_upper_wick": d1_upper_wick,
+            "d1_lower_wick": d1_lower_wick,
+            "local_support": local_support,
+            "local_resistance": local_resistance
         }
 
         # ⚡ Parallel Execution Stage 1: Primary Analysis
@@ -344,14 +357,17 @@ class MasterOrchestrator:
             "ceo": ceo_res
         }
 
-        # Validate minimum decision confidence (60% threshold for SMC setups)
-        if decision in ["BUY", "SELL"] and confidence >= 0.60:
-            # 👑 Boss Sniper ATR-based Dynamic Stop Loss Rule (1:3 Risk-Reward Ratio for Aggressive Profit)
-            # Adapts automatically to gold's actual volatility in both 2025 ($2600) and 2026 ($4700)
-            atr_val = row.get("atr", 5.0)
-            sl_distance = max(10.0, round(atr_val * 2.5, 1))
-            tp_distance = round(sl_distance * 3.0, 1)
-            logger.info(f"   🎯 Boss Sniper [ATR VOLATILITY MODE]: ATR: {atr_val:.2f} | Dynamic SL: {sl_distance} | Dynamic TP: {tp_distance} (1:3 R:R)")
+        # Validate minimum decision confidence (78% threshold for SMC setups)
+        if decision in ["BUY", "SELL"] and confidence >= 0.78:
+            # 👑 Boss Sniper Adaptive Rule: 1:2 Ratio adjusted dynamically based on market volatility
+            if regime == "HIGH_VOLATILITY":
+                sl_distance = 25.0
+                tp_distance = 50.0
+                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:2 R:R)")
+            else:
+                sl_distance = 15.0
+                tp_distance = 30.0
+                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:2 R:R)")
             
             if decision == "BUY":
                 sl_price = row['close'] - sl_distance
@@ -374,14 +390,14 @@ class MasterOrchestrator:
                 computed_lot = risk_amount / (sl_distance * contract_size)
                 lot_size = max(0.01, round(computed_lot, 2))
             
-            # Conviction-Based Scaling: Increase lot size if CEO is extremely confident (Safe 1.2x and 1.5x limits)
+            # Aggressive Scaling: Triple lot size if CEO is extremely confident
             ceo_confidence = ceo_res.get("confidence", 0.85)
             if ceo_confidence >= 0.95:
-                lot_size *= 1.50
-                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.5x)")
+                lot_size *= 3.0  # Triple power
+                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (3x)")
             elif ceo_confidence >= 0.90:
-                lot_size *= 1.20
-                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (1.2x)")
+                lot_size *= 2.0  # Double power
+                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
 
             actual_risk_usd = sl_distance * lot_size * contract_size
             if balance < actual_risk_usd * 4:
@@ -435,6 +451,28 @@ class MasterOrchestrator:
             logger.info("   ➜ Skipping: NO_TRADE or Low Confidence")
             analysis_record["trade_executed"] = False
 
+        # Manage open backtest positions and capture feedback
+        closed_trades = self.backtester.check_stop_levels(
+            timestamp=str(timestamp),
+            current_price=row['close'],
+            high_price=row.get('high', row['close']),
+            low_price=row.get('low', row['close'])
+        )
+        
+        # 🧠 LEARNING: Update memory with trade results
+        if closed_trades:
+            for trade in closed_trades:
+                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
+                pnl = trade.get("profit_loss", 0)
+                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
+                if outcome == "LOSS":
+                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
+                else:
+                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
+                
+                self.learning_memory.append(lesson)
+                logger.info(f"   🧠 New Lesson Learned: {lesson}")
+
         self.analysis_history.append(analysis_record)
         try:
             import json
@@ -452,25 +490,12 @@ class MasterOrchestrator:
         logger.info(f"\n{'#'*60}")
         logger.info("🚀 STARTING HIERARCHICAL MULTI-AGENT BACKTEST")
         logger.info(f"{'#'*60}")
-        
-        # Locate the exact index where backtesting start date begins
-        start_idx = 0
-        if getattr(self, "backtest_start_date", None) is not None:
-            try:
-                start_dt = pd.to_datetime(self.backtest_start_date).tz_localize(self.market_data.index.tz)
-                start_indices = self.market_data.index[self.market_data.index >= start_dt]
-                if not start_indices.empty:
-                    start_idx = self.market_data.index.get_loc(start_indices[0])
-            except Exception as e:
-                logger.error(f"Error locating backtest start index: {e}")
-                start_idx = 0
-
-        logger.info(f"Date Range: {self.market_data.index[start_idx]} to {self.market_data.index[-1]} (Warmup buffer of {start_idx} candles preserved)")
-        logger.info(f"Total Candles evaluated: {len(self.market_data) - start_idx}")
+        logger.info(f"Date Range: {self.market_data.index[0]} to {self.market_data.index[-1]}")
+        logger.info(f"Total Candles: {len(self.market_data)}")
         logger.info(f"Analysis Sample Rate: Every {sample_every_n} candles\n")
 
-        # Run cycle starting from the localized start index
-        for idx in range(start_idx, len(self.market_data), sample_every_n):
+        # Run cycle
+        for idx in range(0, len(self.market_data), sample_every_n):
             timestamp = self.market_data.index[idx]
             row = self.market_data.iloc[idx]
 

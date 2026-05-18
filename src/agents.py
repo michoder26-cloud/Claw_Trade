@@ -13,9 +13,7 @@ logger = logging.getLogger(__name__)
 
 import re
 
-def call_openrouter_api(prompt: str, model: str = None, max_tokens: int = 4000) -> Dict[str, Any]:
-    if not model:
-        model = Config.OPENROUTER_MODEL or "meta-llama/llama-3.1-8b-instruct:free"
+def call_openrouter_api(prompt: str, model: str = "meta-llama/llama-3.1-8b-instruct:free", max_tokens: int = 4000) -> Dict[str, Any]:
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key or api_key.startswith("sk-or-v1-xxxxx"):
         raise ValueError("OPENROUTER_API_KEY is not configured properly")
@@ -35,30 +33,7 @@ def call_openrouter_api(prompt: str, model: str = None, max_tokens: int = 4000) 
         "max_tokens": max_tokens
     }
 
-    import time
-    max_retries = 5
-    backoff = 2
-    resp = None
-    for attempt in range(max_retries):
-        try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=120)
-            if resp.status_code == 200:
-                break
-            elif resp.status_code == 429 or resp.status_code >= 500:
-                logger.warning(f"OpenRouter returned HTTP {resp.status_code}. Retrying in {backoff}s... (Attempt {attempt+1}/{max_retries})")
-                time.sleep(backoff)
-                backoff *= 2
-            else:
-                raise ValueError(f"OpenRouter HTTP {resp.status_code}: {resp.text}")
-        except requests.exceptions.RequestException as req_err:
-            if attempt == max_retries - 1:
-                raise
-            logger.warning(f"Request error: {req_err}. Retrying in {backoff}s... (Attempt {attempt+1}/{max_retries})")
-            time.sleep(backoff)
-            backoff *= 2
-    else:
-        raise ValueError(f"Failed to get successful response from OpenRouter after {max_retries} attempts.")
-
+    resp = requests.post(url, json=payload, headers=headers, timeout=120)
     if resp.status_code == 200:
         data = resp.json()
         raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -131,15 +106,16 @@ class QuantAnalyst:
     """Focuses strictly on math and technical indicators without choosing a final trade direction."""
     
     def __init__(self):
-        # Switched to DeepSeek v4 Flash for active free-tier reliability
-        self.model = "deepseek/deepseek-v4-flash:free"
+        # Switched to Gemini for speed
+        self.model = "google/gemini-2.0-flash-exp:free"
 
     def analyze(self, market_context: str, indicators: Dict[str, Any]) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            # Use high-fidelity regime determined by the orchestrator
-            regime = indicators.get("regime", "RANGING")
+            # MMTC v2.0 Regime-Adaptive Quant Logic
             ema_50 = indicators.get("ema_50", indicators.get("close", 0))
             ema_200 = indicators.get("ema_200", indicators.get("close", 0))
+            ema_diff = abs(ema_50 - ema_200) / ema_200 if ema_200 > 0 else 0
+            regime = "TRENDING" if ema_diff > 0.015 else "RANGING"
 
             return {
                 "trend": "bullish" if indicators.get("close", 0) > indicators.get("ema_200", 0) else "bearish",
@@ -154,11 +130,16 @@ class QuantAnalyst:
                 "bb_upper": indicators.get("bb_upper", 0),
                 "bb_lower": indicators.get("bb_lower", 0),
                 "close": indicators.get("close", 0),
+                "open": indicators.get("open", 0),
                 "ema_200": ema_200,
                 "fibo_zone": indicators.get("fibo_zone", "neutral"),
                 "regime": regime,
                 "hour": indicators.get("hour", 12),
-                "technical_summary": f"RSI={indicators.get('rsi', 50.0):.1f}. EMA 5={indicators.get('ema_5', 0):.2f}, SMA 36={indicators.get('sma_36', 0):.2f}. Price relative to BB Lower={indicators.get('bb_lower', 0):.2f}."
+                "d1_upper_wick": indicators.get("d1_upper_wick", 0.0),
+                "d1_lower_wick": indicators.get("d1_lower_wick", 0.0),
+                "local_support": indicators.get("local_support", 0.0),
+                "local_resistance": indicators.get("local_resistance", 0.0),
+                "technical_summary": f"RSI={indicators.get('rsi', 50.0):.1f}. EMA 5={indicators.get('ema_5', 0):.2f}, SMA 36={indicators.get('sma_36', 0):.2f}. BB Lower={indicators.get('bb_lower', 0):.2f}. D1 Wicks: Upper={indicators.get('d1_upper_wick', 0.0):.2f}, Lower={indicators.get('d1_lower_wick', 0.0):.2f}. S/R H1: Support={indicators.get('local_support', 0.0):.2f}, Resistance={indicators.get('local_resistance', 0.0):.2f}."
             }
 
         prompt = f"""You are an elite Quant & Technical Analyst specializing in XAU/USD.
@@ -193,7 +174,7 @@ Provide your objective technical analysis in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
+            return call_openrouter_api(prompt, max_tokens=4000)
         except Exception as e:
             logger.error(f"OpenRouter Quant Analysis failed: {e}")
             # Fallback to mock logic if AI fails to save the trade flow
@@ -208,7 +189,7 @@ class NewsAnalyst:
     """Analyzes fundamentals strictly focusing on major high-impact events like the Fed, rates, and yields."""
 
     def __init__(self):
-        self.model = "deepseek/deepseek-v4-flash:free"
+        self.model = "meta-llama/llama-3.1-8b-instruct:free"
 
     def analyze(self, news_text: str = "") -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -249,7 +230,7 @@ Provide your analysis in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
+            return call_openrouter_api(prompt, max_tokens=4000)
         except Exception as e:
             logger.error(f"News Analyst OpenRouter error: {e}")
             return {"fundamental_bias": "neutral", "fundamental_summary": f"OpenRouter Error: {e}"}
@@ -259,7 +240,7 @@ class BullAgent:
     """Prosecuting Attorney for BUY signals. Highly biased to build the strongest BUY case possible."""
 
     def __init__(self):
-        self.model = "deepseek/deepseek-v4-flash:free"
+        self.model = "meta-llama/llama-3.1-8b-instruct:free"
 
     def advocate(self, quant_analysis: Dict, news_analysis: Dict) -> AnalysisResult:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -272,35 +253,53 @@ class BullAgent:
             bb_lower = quant_analysis.get("bb_lower", 0.0)
             ema_50 = quant_analysis.get("ema_50", 0.0)
             ema_200 = quant_analysis.get("ema_200", 0.0)
-            macro_trend = quant_analysis.get("macro_trend", "bullish")
 
             signal = "HOLD"
             confidence = 0.40
             reasoning = "MMTC v2.0: No high-probability institutional BUY setups detected."
 
-            if regime in ["RANGING", "HIGH_VOLATILITY"]:
+            if regime == "RANGING":
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                # Daily Macro Trend Guard: Only buy during macro uptrend to avoid structural bear traps
-                # Momentum/Waterfall protection: Do not buy if RSI < 32 (waterfall drop)
-                if fibo_zone == "all_in_market_maker" and 32 <= rsi < 40 and macd_cross != "bearish_cross" and macro_trend == "bullish":
+                if fibo_zone == "all_in_market_maker" and rsi < 40 and macd_cross != "bearish_cross":
                     signal = "BUY"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is oversold. Strong institutional liquidity sweep expected."
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Lower support + oversold)
-                # Daily Macro Trend Guard: Only buy during macro uptrend to protect against deep corrections
-                # Momentum Protection: Do not buy if MACD has recently made a bearish crossover or RSI < 32
-                elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and 32 <= rsi < 42 and macro_trend == "bullish" and macd_cross != "bearish_cross":
+                elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and rsi < 42:
                     signal = "BUY"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Lower Limit in Discount Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                # Double-bounded RSI Filter: Only ride momentum in sweet spot, prevent buying the absolute peak (RSI >= 61)
-                # Trend Momentum Trigger: Support both fresh crossover and active bullish MACD state
-                if close > ema_50 and close > ema_200 and 52 < rsi < 61 and (macd_cross == "bullish_cross" or quant_analysis.get("macd_state") == "bullish"):
+                if close > ema_50 and close > ema_200 and rsi > 52 and macd_cross == "bullish_cross":
                     signal = "BUY"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Trending Breakout]: Strong trending ride. Price is above EMA 50 & 200 with active bullish MACD momentum."
+                    reasoning = f"MMTC v2.0 [Trending Breakout]: Strong trending ride. Price is above EMA 50 & 200 with bullish MACD crossover."
+
+            # Setup D: Pure Price Action & Wick Fill (New institutional Setup)
+            # Only triggers if primary setups are not active
+            if signal == "HOLD":
+                d1_upper_wick = quant_analysis.get("d1_upper_wick", 0.0)
+                d1_lower_wick = quant_analysis.get("d1_lower_wick", 0.0)
+                open_price = quant_analysis.get("open", 0.0)
+                macd_cross = quant_analysis.get("macd_cross", "neutral")
+                
+                # Rule D2: Daily Wick Fill Bullish Bias (Wick Creation target)
+                # Must align with institutional discount or market maker zones to ensure high win rate!
+                is_wick_fill = (
+                    d1_lower_wick >= 12.0 
+                    and d1_upper_wick < 1.0 
+                    and fibo_zone in ["discount_premium", "all_in_market_maker"]
+                    and close > open_price 
+                    and (close - open_price) >= 5.0 
+                    and rsi > 52 
+                    and macd_cross == "bullish_cross"
+                )
+
+                if is_wick_fill:
+                    signal = "BUY"
+                    confidence = 0.84
+                    reasoning = f"MMTC v2.0 [Setup D - Daily Wick Fill BUY]: High-conviction daily lower wick rejection ({d1_lower_wick:.2f}) aligned with Fibo Zone ({fibo_zone}). Price expected to expand upward."
 
             return AnalysisResult(
                 agent_name="BullishStrategist",
@@ -330,7 +329,7 @@ Output your best BUY case in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            result = call_openrouter_api(prompt, model=self.model, max_tokens=4000)
+            result = call_openrouter_api(prompt, max_tokens=4000)
             return AnalysisResult(
                 agent_name="BullishStrategist",
                 signal=result.get("signal", "HOLD"),
@@ -347,7 +346,7 @@ class BearAgent:
     """Prosecuting Attorney for SELL signals. Highly biased to build the strongest SELL case possible."""
 
     def __init__(self):
-        self.model = "deepseek/deepseek-v4-flash:free"
+        self.model = "meta-llama/llama-3.1-8b-instruct:free"
 
     def advocate(self, quant_analysis: Dict, news_analysis: Dict) -> AnalysisResult:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
@@ -360,34 +359,53 @@ class BearAgent:
             bb_upper = quant_analysis.get("bb_upper", 0.0)
             ema_50 = quant_analysis.get("ema_50", 0.0)
             ema_200 = quant_analysis.get("ema_200", 0.0)
-            macro_trend = quant_analysis.get("macro_trend", "bullish")
 
             signal = "HOLD"
             confidence = 0.40
             reasoning = "MMTC v2.0: No high-probability institutional SELL setups detected."
 
-            if regime in ["RANGING", "HIGH_VOLATILITY"]:
+            if regime == "RANGING":
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                # Parabolic Breakout protection: Do not short if RSI > 68 (strong trend breakout)
-                if fibo_zone == "all_in_market_maker" and 60 < rsi <= 68 and macd_cross != "bullish_cross":
+                if fibo_zone == "all_in_market_maker" and rsi > 60 and macd_cross != "bullish_cross":
                     signal = "SELL"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is overbought. Strong institutional liquidity sweep expected."
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Upper resistance + overbought)
-                # Counter-trend protection: Standard RSI > 58 to capture maximum ranging swings, max 68 to prevent vertical breakouts
-                # Momentum Protection: Do not sell if MACD has recently made a bullish crossover
-                elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and 58 < rsi <= 68 and macd_cross != "bullish_cross":
+                elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and rsi > 58:
                     signal = "SELL"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Upper Limit in Premium Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                # Double-bounded RSI Filter: Only short momentum in sweet spot, prevent selling the absolute bottom (RSI <= 39)
-                # Trend Momentum Trigger: Support both fresh crossover and active bearish MACD state
-                if close < ema_50 and close < ema_200 and 39 < rsi < 48 and (macd_cross == "bearish_cross" or quant_analysis.get("macd_state") == "bearish"):
+                if close < ema_50 and close < ema_200 and rsi < 48 and macd_cross == "bearish_cross":
                     signal = "SELL"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Trending Breakdown]: Strong trending ride. Price is below EMA 50 & 200 with active bearish MACD momentum."
+                    reasoning = f"MMTC v2.0 [Trending Breakdown]: Strong trending ride. Price is below EMA 50 & 200 with bearish MACD crossover."
+
+            # Setup D: Pure Price Action & Wick Fill (New institutional Setup)
+            # Only triggers if primary setups are not active
+            if signal == "HOLD":
+                d1_upper_wick = quant_analysis.get("d1_upper_wick", 0.0)
+                d1_lower_wick = quant_analysis.get("d1_lower_wick", 0.0)
+                open_price = quant_analysis.get("open", 0.0)
+                macd_cross = quant_analysis.get("macd_cross", "neutral")
+
+                # Rule D2: Daily Wick Fill Bearish Bias (Wick Creation target)
+                # Must align with institutional premium or market maker zones to ensure high win rate!
+                is_wick_fill = (
+                    d1_upper_wick >= 12.0 
+                    and d1_lower_wick < 1.0 
+                    and fibo_zone in ["discount_premium", "all_in_market_maker"]
+                    and close < open_price 
+                    and (open_price - close) >= 5.0 
+                    and rsi < 48 
+                    and macd_cross == "bearish_cross"
+                )
+
+                if is_wick_fill:
+                    signal = "SELL"
+                    confidence = 0.84
+                    reasoning = f"MMTC v2.0 [Setup D - Daily Wick Fill SELL]: High-conviction daily upper wick rejection ({d1_upper_wick:.2f}) aligned with Fibo Zone ({fibo_zone}). Price expected to expand downward."
 
             return AnalysisResult(
                 agent_name="BearishStrategist",
@@ -417,7 +435,7 @@ Output your best SELL case in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            result = call_openrouter_api(prompt, model=self.model, max_tokens=4000)
+            result = call_openrouter_api(prompt, max_tokens=4000)
             return AnalysisResult(
                 agent_name="BearishStrategist",
                 signal=result.get("signal", "HOLD"),
@@ -434,15 +452,15 @@ class CEOAgent:
     """The Ultimate Decision Maker. Acts as an unbiased, highly experienced mediator."""
 
     def __init__(self):
-        self.model = Config.OPENROUTER_MODEL or "deepseek/deepseek-v4-flash:free"
+        self.model = "meta-llama/llama-3.1-8b-instruct:free"
 
     def decide(self, quant_data: Dict, news_data: Dict, bull_case: Dict, bear_case: Dict, market_regime: str, learning_memory: List[str] = None) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
             bull_conf = bull_case.get("conviction_score", 0)
             bear_conf = bear_case.get("conviction_score", 0)
             
-            # MMTC v2.0 High-Probability Threshold (>= 0.60 for institutional setups)
-            threshold = 0.60
+            # MMTC v2.0 High-Probability Threshold (>= 0.78 for institutional setups)
+            threshold = 0.78
             if bull_conf > bear_conf and bull_conf >= threshold:
                 decision, confidence = "BUY", bull_conf
                 reason = f"Approved BUY setup: {bull_case.get('reasoning', '')}"
@@ -495,7 +513,7 @@ Provide your final decision in this exact JSON format:
 Do NOT output any other text or markdown tags outside the raw JSON."""
 
         try:
-            return call_openrouter_api(prompt, model=self.model, max_tokens=4000)
+            return call_openrouter_api(prompt, max_tokens=4000)
         except Exception as e:
             logger.error(f"CEO Agent error: {e}")
             return {"decision": "NO_TRADE", "confidence": 0.0, "reasoning": f"Critical error in CEO agent: {e}"}

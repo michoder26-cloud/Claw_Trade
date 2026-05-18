@@ -470,13 +470,38 @@ class AutoTrader:
                 sl_price = entry_price + sl_distance
                 tp_price = entry_price - tp_distance
 
-            # Position sizing
-            lot_size = max(0.01, self.config.BASE_LOT_SIZE)
+            # Dynamic Risk-Based Position Sizing (Money Management)
+            balance = 10000.0  # fallback
+            contract_size = 100.0  # Default standard contract size
+            
+            try:
+                import MetaTrader5 as mt5_lib
+                if self.mt5.initialized and mt5_lib is not None:
+                    acc_info = mt5_lib.account_info()
+                    if acc_info is not None:
+                        balance = acc_info.balance
+                    sym_info = mt5_lib.symbol_info(self.mt5.symbol)
+                    if sym_info is not None:
+                        contract_size = float(sym_info.trade_contract_size)
+            except Exception as e:
+                logger.warning(f"Could not retrieve live MT5 account/symbol info for sizing: {e}. Using defaults.")
 
-            # Regime risk adjustment
-            if regime == "RANGING":
-                lot_size = max(0.01, round(lot_size * 0.5, 2))
-                logger.info(f"🛡️ RANGING regime: Lot reduced to {lot_size}")
+            fixed_lot = getattr(self.config, "FIXED_LOT_SIZE", 0.0)
+            if fixed_lot and float(fixed_lot) > 0:
+                lot_size = float(fixed_lot)
+                logger.info(f"   ℹ️ Using FIXED_LOT_SIZE from config: {lot_size}")
+            else:
+                risk_percent = getattr(self.config, "POSITION_SIZE_PERCENT", 15.0)
+                risk_amount = balance * (risk_percent / 100.0)
+                computed_lot = risk_amount / (sl_distance * contract_size)
+                lot_size = max(0.01, round(computed_lot, 2))
+                
+                # Regime risk adjustment (Only reduce if not standard high confidence)
+                if regime == "RANGING":
+                    lot_size = max(0.01, round(lot_size * 0.5, 2))
+                    logger.info(f"   🛡️ RANGING regime: Lot reduced by 50% to {lot_size}")
+                
+                logger.info(f"   ℹ️ Calculated Dynamic Lot Size: {lot_size} (Risking {risk_percent}% of balance ${balance:.2f} with {sl_distance:.2f} SL, contract size: {contract_size})")
 
             # ── Execute on MT5 ──
             logger.info(f"🚀 Executing {decision} {lot_size} Lot @ ${entry_price:.2f} | SL=${sl_price:.2f} TP=${tp_price:.2f}")
