@@ -108,8 +108,7 @@ class QuantAnalyst:
     """Focuses strictly on math and technical indicators without choosing a final trade direction."""
     
     def __init__(self):
-        # Switched to Gemini for speed
-        self.model = "google/gemini-2.0-flash-exp:free"
+        self.model = Config.OPENROUTER_MODEL
 
     def analyze(self, market_context: str, indicators: Dict[str, Any]) -> Dict[str, Any]:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
