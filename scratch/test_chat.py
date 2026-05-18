@@ -16,7 +16,7 @@ headers = {
 }
 
 payload = {
-    "model": "deepseek/deepseek-v4-flash:free",
+    "model": "deepseek/deepseek-chat",
     "messages": [{"role": "user", "content": "Say hello!"}],
     "temperature": 0.2,
     "max_tokens": 100

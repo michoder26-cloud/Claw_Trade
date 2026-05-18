@@ -27,7 +27,7 @@ try:
         # Look for free models or specific ones
         free_models = [m.get("id") for m in models if "free" in m.get("id", "")]
         print(f"\nFree models found ({len(free_models)}):")
-        for fm in free_models[:20]:
+        for fm in free_models:
             print(f" - {fm}")
             
         # Check specific models
