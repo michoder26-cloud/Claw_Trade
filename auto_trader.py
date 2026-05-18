@@ -477,6 +477,7 @@ class AutoTrader:
             # Dynamic Risk-Based Position Sizing (Money Management)
             balance = 10000.0  # fallback
             contract_size = 100.0  # Default standard contract size
+            is_cent_account = False
             
             try:
                 import MetaTrader5 as mt5_lib
@@ -484,6 +485,10 @@ class AutoTrader:
                     acc_info = mt5_lib.account_info()
                     if acc_info is not None:
                         balance = acc_info.balance
+                        currency = getattr(acc_info, "currency", "")
+                        if "CENT" in currency.upper() or self.mt5.symbol.endswith("c"):
+                            is_cent_account = True
+                            logger.info(f"   🪙 Cent Account Detected (Currency: {currency}, Symbol: {self.mt5.symbol}). Converting balance for sizing.")
                     sym_info = mt5_lib.symbol_info(self.mt5.symbol)
                     if sym_info is not None:
                         contract_size = float(sym_info.trade_contract_size)
@@ -496,7 +501,9 @@ class AutoTrader:
                 logger.info(f"   ℹ️ Using FIXED_LOT_SIZE from config: {lot_size}")
             else:
                 risk_percent = getattr(self.config, "POSITION_SIZE_PERCENT", 15.0)
-                risk_amount = balance * (risk_percent / 100.0)
+                # Convert balance to USD base if it is a Cent Account to match sl_distance in USD
+                calc_balance = balance / 100.0 if is_cent_account else balance
+                risk_amount = calc_balance * (risk_percent / 100.0)
                 computed_lot = risk_amount / (sl_distance * contract_size)
                 lot_size = max(0.01, round(computed_lot, 2))
                 
@@ -505,7 +512,7 @@ class AutoTrader:
                     lot_size = max(0.01, round(lot_size * 0.5, 2))
                     logger.info(f"   🛡️ RANGING regime: Lot reduced by 50% to {lot_size}")
                 
-                logger.info(f"   ℹ️ Calculated Dynamic Lot Size: {lot_size} (Risking {risk_percent}% of balance ${balance:.2f} with {sl_distance:.2f} SL, contract size: {contract_size})")
+                logger.info(f"   ℹ️ Calculated Dynamic Lot Size: {lot_size} (Risking {risk_percent}% of balance ${calc_balance:.2f} with {sl_distance:.2f} SL, contract size: {contract_size})")
 
             # ── Execute on MT5 ──
             logger.info(f"🚀 Executing {decision} {lot_size} Lot @ ${entry_price:.2f} | SL=${sl_price:.2f} TP=${tp_price:.2f}")
