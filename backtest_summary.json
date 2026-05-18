@@ -1,0 +1,19 @@
+{
+  "initial_balance": 10000.0,
+  "final_balance": 30501.0,
+  "net_profit_loss": 20501.0,
+  "profit_loss_pct": 205.01,
+  "total_trades": 31,
+  "buy_trades": 20,
+  "sell_trades": 11,
+  "winning_trades": 27,
+  "losing_trades": 4,
+  "win_rate": 87.09677419354838,
+  "profit_factor": 3.3852239674229203,
+  "gross_profit": 29096.0,
+  "gross_loss": 8595.0,
+  "avg_profit_per_trade": 661.3225806451613,
+  "max_drawdown": -2775.0000000000005,
+  "max_drawdown_pct": -27.750000000000004,
+  "sharpe_ratio": 1.2267531198532426
+}

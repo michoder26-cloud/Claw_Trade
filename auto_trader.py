@@ -424,17 +424,21 @@ class AutoTrader:
         # 3. Bull Agent
         logger.info("🐂 Running Bull Agent...")
         bull_res = self.bull_agent.advocate(quant_res, news_res)
-        bull_argument = bull_res.get("bullish_argument", "N/A")
-
+        bull_argument = bull_res.reasoning
+        bull_case = {"conviction_score": bull_res.confidence, "reasoning": bull_res.reasoning}
+        
         # 4. Bear Agent
         logger.info("🐻 Running Bear Agent...")
         bear_res = self.bear_agent.advocate(quant_res, news_res)
-        bear_argument = bear_res.get("bearish_argument", "N/A")
-
+        bear_argument = bear_res.reasoning
+        bear_case = {"conviction_score": bear_res.confidence, "reasoning": bear_res.reasoning}
+        
         # 5. CEO Decision
         logger.info("👔 Running CEO Agent (Final Decision)...")
-        ceo_res = self.ceo_agent.decide(quant_res, news_res, bull_res, bear_res, regime)
-
+        # Extract recent lessons from memory as List[str]
+        learning_memory = [l["lesson"] for l in self.lessons]
+        ceo_res = self.ceo_agent.decide(quant_res, news_res, bull_case, bear_case, regime, learning_memory)
+        
         decision = ceo_res.get("decision", "NO_TRADE")
         confidence = ceo_res.get("confidence", 0.5)
         ceo_reasoning = ceo_res.get("reasoning", "N/A")

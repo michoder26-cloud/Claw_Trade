@@ -1,0 +1,191 @@
+{
+  "best_config": {
+    "rsi_level": 25,
+    "ema_period": 10,
+    "fibo_pref": "all",
+    "total_trades": 1,
+    "winning_trades": 1,
+    "win_rate": 100.0,
+    "signals": [
+      {
+        "timestamp": "2026-05-13 12:00:00+00:00",
+        "price": 4690.7001953125,
+        "rsi": 24.587667733032703,
+        "confidence": 0.85,
+        "fibo_zone": "discount_premium"
+      }
+    ]
+  },
+  "top_10_configs": [
+    {
+      "rsi_level": 25,
+      "ema_period": 10,
+      "fibo_pref": "all",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 10,
+      "fibo_pref": "discount",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 10,
+      "fibo_pref": "premium",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 20,
+      "fibo_pref": "all",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 20,
+      "fibo_pref": "discount",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 20,
+      "fibo_pref": "premium",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 50,
+      "fibo_pref": "all",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 50,
+      "fibo_pref": "discount",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 50,
+      "fibo_pref": "premium",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    },
+    {
+      "rsi_level": 25,
+      "ema_period": 100,
+      "fibo_pref": "all",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "win_rate": 100.0,
+      "signals": [
+        {
+          "timestamp": "2026-05-13 12:00:00+00:00",
+          "price": 4690.7001953125,
+          "rsi": 24.587667733032703,
+          "confidence": 0.85,
+          "fibo_zone": "discount_premium"
+        }
+      ]
+    }
+  ]
+}

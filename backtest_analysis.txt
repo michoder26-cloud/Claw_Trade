@@ -1,0 +1,5 @@
+Total Periods: 1148
+Total Trades: 9
+BUY Trades: 4
+SELL Trades: 5
+Trade Frequency: 0.78%

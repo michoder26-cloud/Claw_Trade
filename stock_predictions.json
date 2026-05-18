@@ -1,0 +1,290 @@
+[
+  {
+    "date": "2026-05-13T22:42:29.171668",
+    "ticker": "MSFT",
+    "close_at_prediction": 405.21,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.172131",
+    "ticker": "NVDA",
+    "close_at_prediction": 225.83,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.177641",
+    "ticker": "ASML",
+    "close_at_prediction": 1581.58,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.182309",
+    "ticker": "TSM",
+    "close_at_prediction": 399.8,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.186714",
+    "ticker": "ORCL",
+    "close_at_prediction": 189.76,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.190985",
+    "ticker": "QQQ",
+    "close_at_prediction": 714.71,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.195976",
+    "ticker": "AAPL",
+    "close_at_prediction": 298.87,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.200790",
+    "ticker": "TSLA",
+    "close_at_prediction": 445.27,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.205477",
+    "ticker": "GOOGL",
+    "close_at_prediction": 402.62,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.210125",
+    "ticker": "SPY",
+    "close_at_prediction": 742.31,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.214745",
+    "ticker": "VOO",
+    "close_at_prediction": 682.41,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-13T22:42:29.219229",
+    "ticker": "SMH",
+    "close_at_prediction": 572.46,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.680286",
+    "ticker": "MSFT",
+    "close_at_prediction": 405.21,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.686975",
+    "ticker": "NVDA",
+    "close_at_prediction": 225.83,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.692935",
+    "ticker": "ASML",
+    "close_at_prediction": 1581.58,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.698229",
+    "ticker": "TSM",
+    "close_at_prediction": 399.8,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.703156",
+    "ticker": "ORCL",
+    "close_at_prediction": 189.76,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.708207",
+    "ticker": "SPY",
+    "close_at_prediction": 742.31,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.713160",
+    "ticker": "QQQ",
+    "close_at_prediction": 714.71,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.718083",
+    "ticker": "VOO",
+    "close_at_prediction": 682.41,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.722997",
+    "ticker": "AAPL",
+    "close_at_prediction": 298.87,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.728322",
+    "ticker": "TSLA",
+    "close_at_prediction": 445.27,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.733315",
+    "ticker": "GOOGL",
+    "close_at_prediction": 402.62,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-14T10:00:28.738609",
+    "ticker": "SMH",
+    "close_at_prediction": 572.46,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:29.861681",
+    "ticker": "ASML",
+    "close_at_prediction": 1584.51,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:29.963667",
+    "ticker": "TSM",
+    "close_at_prediction": 417.72,
+    "decision": "HOLD",
+    "quant_score": 70,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:29.991244",
+    "ticker": "MSFT",
+    "close_at_prediction": 409.43,
+    "decision": "HOLD",
+    "quant_score": 65,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.008332",
+    "ticker": "ORCL",
+    "close_at_prediction": 195.61,
+    "decision": "HOLD",
+    "quant_score": 65,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.025344",
+    "ticker": "SPY",
+    "close_at_prediction": 748.17,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.034300",
+    "ticker": "QQQ",
+    "close_at_prediction": 719.79,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.043869",
+    "ticker": "VOO",
+    "close_at_prediction": 687.73,
+    "decision": "HOLD",
+    "quant_score": 60,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.052970",
+    "ticker": "AAPL",
+    "close_at_prediction": 298.21,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.062127",
+    "ticker": "NVDA",
+    "close_at_prediction": 235.74,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.070643",
+    "ticker": "TSLA",
+    "close_at_prediction": 443.3,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.079611",
+    "ticker": "GOOGL",
+    "close_at_prediction": 401.07,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  },
+  {
+    "date": "2026-05-15T10:00:30.090581",
+    "ticker": "SMH",
+    "close_at_prediction": 578.34,
+    "decision": "HOLD",
+    "quant_score": 55,
+    "confidence": 50
+  }
+]

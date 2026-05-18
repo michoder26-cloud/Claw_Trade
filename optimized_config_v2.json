@@ -1,0 +1,132 @@
+{
+  "best_config": {
+    "rsi_level": 45,
+    "ema_period": 10,
+    "use_fibo": false,
+    "total_trades": 31,
+    "winning_trades": 31,
+    "win_rate": 100.0
+  },
+  "top_15_configs": [
+    {
+      "rsi_level": 45,
+      "ema_period": 10,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 45,
+      "ema_period": 20,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 45,
+      "ema_period": 50,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 10,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 20,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 50,
+      "use_fibo": false,
+      "total_trades": 31,
+      "winning_trades": 31,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 40,
+      "ema_period": 10,
+      "use_fibo": false,
+      "total_trades": 23,
+      "winning_trades": 23,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 40,
+      "ema_period": 20,
+      "use_fibo": false,
+      "total_trades": 23,
+      "winning_trades": 23,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 40,
+      "ema_period": 50,
+      "use_fibo": false,
+      "total_trades": 23,
+      "winning_trades": 23,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 45,
+      "ema_period": 10,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 45,
+      "ema_period": 20,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 45,
+      "ema_period": 50,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 10,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 20,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    },
+    {
+      "rsi_level": 50,
+      "ema_period": 50,
+      "use_fibo": true,
+      "total_trades": 17,
+      "winning_trades": 17,
+      "win_rate": 100.0
+    }
+  ]
+}
