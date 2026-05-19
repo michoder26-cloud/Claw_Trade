@@ -66,7 +66,32 @@ class MasterOrchestrator:
         self.trades_today = 0
         self.last_trade_date: Optional[str] = None
 
+        self.open_positions: List[Dict] = []
+        if self.mode == "LIVE":
+            self._load_live_positions()
+
         logger.info(f"Hierarchical Orchestrator initialized in {mode} mode")
+
+    def _load_live_positions(self):
+        """Loads open live positions from live_positions.json"""
+        try:
+            import json
+            if os.path.exists("live_positions.json"):
+                with open("live_positions.json", "r", encoding="utf-8") as f:
+                    self.open_positions = json.load(f)
+                logger.info(f"💾 Loaded {len(self.open_positions)} active positions from live_positions.json")
+        except Exception as e:
+            logger.error(f"Failed to load live_positions.json: {e}")
+
+    def _save_live_positions(self):
+        """Saves current open live positions to live_positions.json"""
+        try:
+            import json
+            with open("live_positions.json", "w", encoding="utf-8") as f:
+                json.dump(self.open_positions, f, indent=2, default=str)
+            logger.info(f"💾 Saved {len(self.open_positions)} active positions to live_positions.json")
+        except Exception as e:
+            logger.error(f"Failed to save live_positions.json: {e}")
 
     def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None, interval: str = None) -> pd.DataFrame:
         """Load and prepare market data with 30-day indicator warmup buffer"""
@@ -418,20 +443,40 @@ class MasterOrchestrator:
                 
                 # 📢 DISCORD REPORT: Order Opened
                 if trade_executed:
+                    # Save live position info
+                    ticket = live_order.get('ticket') if live_order else None
+                    pos_info = {
+                        "ticket": ticket,
+                        "signal": decision,
+                        "entry_price": live_order.get('price') if (live_order and live_order.get('price')) else row['close'],
+                        "lot_size": lot_size,
+                        "stop_loss": sl_price,
+                        "take_profit": tp_price,
+                        "confidence": confidence,
+                        "regime": regime,
+                        "quant_summary": quant_res.get('technical_summary', 'N/A'),
+                        "news_summary": news_res.get('fundamental_bias', 'N/A'),
+                        "bull_argument": getattr(bull_res, 'reasoning', 'N/A'),
+                        "bear_argument": getattr(bear_res, 'reasoning', 'N/A'),
+                        "ceo_reasoning": reasoning
+                    }
+                    self.open_positions.append(pos_info)
+                    self._save_live_positions()
+
                     try:
                         self.discord_reporter.report_order_opened(
                             signal=decision,
-                            entry_price=row['close'],
+                            entry_price=pos_info['entry_price'],
                             sl_price=sl_price,
                             tp_price=tp_price,
                             lot_size=lot_size,
-                            ticket=live_order.get('ticket') if live_order else None,
+                            ticket=ticket,
                             confidence=confidence,
                             regime=regime,
                             quant_summary=quant_res.get('technical_summary', 'N/A'),
                             news_summary=news_res.get('fundamental_bias', 'N/A'),
-                            bull_argument=bull_res.get('reasoning', 'N/A'),
-                            bear_argument=bear_res.get('reasoning', 'N/A'),
+                            bull_argument=getattr(bull_res, 'reasoning', 'N/A'),
+                            bear_argument=getattr(bear_res, 'reasoning', 'N/A'),
                             ceo_reasoning=reasoning
                         )
                     except Exception as dr_err:
@@ -537,52 +582,66 @@ class MasterOrchestrator:
             )
         except: pass
         
+        last_analysis_time = None
+        
         while True:
             try:
-                prices = self.mt5_connector.get_price()
-                if not prices:
-                    logger.warning("Could not fetch current price. Retrying in 10 seconds...")
-                    time.sleep(10)
-                    continue
-                
-                current_price = prices["ask"]
+                # 🔍 1. Monitor open positions continuously (every 10 seconds)
+                self._monitor_live_positions()
+
                 now = datetime.now()
-                logger.info(f"\n[{now}] Current Ask Price: {current_price:.2f}")
-
-                # Fetch recent historical data from yfinance for technical indicators
-                df = self.data_handler.prepare_for_analysis(
-                    symbol=self.config.XAU_USD_SYMBOL, 
-                    start=(datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d"),
-                    end=(datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                )
-
-                if df.empty or len(df) < 20:
-                    logger.error("Not enough market data fetched. Retrying in 60 seconds...")
-                    time.sleep(60)
-                    continue
-
-                # Add EMA 50 & 200
-                df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
-                df['ema_200'] = df['close'].ewm(span=200, adjust=False).mean()
-                self.market_data = df  # Sync orchestrator data reference
-
-                latest_row = df.iloc[-1]
-                timestamp = df.index[-1]
                 
-                # Execute analysis
-                self.analyze_at_timestamp(timestamp, latest_row)
-                
-                # 📢 DISCORD REPORT: Periodic Status (Every 3 hours to avoid spam)
-                if self.mode == "LIVE" and now.hour % 3 == 0 and now.minute < interval_minutes:
-                    try:
-                        self.discord_reporter.report_system_status(
-                            title="🟢 AUTO-TRADE STATUS: บอททำงานปกติ",
-                            message=f"สแตนด์บายเฝ้าทองคำ XAU/USD ในตลาดจริง\nราคาทองปัจจุบัน: ${current_price:.2f}"
-                        )
-                    except: pass
+                # Check if it is time to run market analysis
+                if last_analysis_time is None or (now - last_analysis_time).total_seconds() >= interval_minutes * 60:
+                    logger.info(f"⏰ Time to analyze market. Last analysis: {last_analysis_time}")
+                    last_analysis_time = now
+
+                    prices = self.mt5_connector.get_price()
+                    if not prices:
+                        logger.warning("Could not fetch current price. Retrying in 10 seconds...")
+                        # Offset next analysis by 10s to try again
+                        last_analysis_time = now - timedelta(seconds=(interval_minutes * 60 - 10))
+                        time.sleep(10)
+                        continue
+                    
+                    current_price = prices["ask"]
+                    logger.info(f"\n[{now}] Current Ask Price: {current_price:.2f}")
+
+                    # Fetch recent historical data from yfinance for technical indicators
+                    df = self.data_handler.prepare_for_analysis(
+                        symbol=self.config.XAU_USD_SYMBOL, 
+                        start=(datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d"),
+                        end=(datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                    )
+
+                    if df.empty or len(df) < 20:
+                        logger.error("Not enough market data fetched. Retrying in 60 seconds...")
+                        last_analysis_time = now - timedelta(seconds=(interval_minutes * 60 - 60))
+                        time.sleep(10)
+                        continue
+
+                    # Add EMA 50 & 200
+                    df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
+                    df['ema_200'] = df['close'].ewm(span=200, adjust=False).mean()
+                    self.market_data = df  # Sync orchestrator data reference
+
+                    latest_row = df.iloc[-1]
+                    timestamp = df.index[-1]
+                    
+                    # Execute analysis
+                    self.analyze_at_timestamp(timestamp, latest_row)
+                    
+                    # 📢 DISCORD REPORT: Periodic Status (Every 3 hours to avoid spam)
+                    if self.mode == "LIVE" and now.hour % 3 == 0 and now.minute < 5:
+                        try:
+                            self.discord_reporter.report_system_status(
+                                title="🟢 AUTO-TRADE STATUS: บอททำงานปกติ",
+                                message=f"สแตนด์บายเฝ้าทองคำ XAU/USD ในตลาดจริง\nราคาทองปัจจุบัน: ${current_price:.2f}"
+                            )
+                        except: pass
                 
                 # Doraemon Scheduled Audit: Every Saturday at 10:00 AM, trigger automated reflection engine
-                if now.weekday() == 5 and now.hour == 10:
+                if now.weekday() == 5 and now.hour == 10 and now.minute == 0 and now.second < 15:
                     try:
                         from agents import TradeReflectionEngine
                         TradeReflectionEngine.run_weekly_reflection("trade_history_log.json")
@@ -592,8 +651,159 @@ class MasterOrchestrator:
             except Exception as e:
                 logger.error(f"Error in trading loop: {e}")
 
-            logger.info(f"Sleeping for {interval_minutes} minutes...")
-            time.sleep(interval_minutes * 60)
+            time.sleep(10)
+
+    def _generate_reflection_lesson(self, pos: Dict, exit_price: float, pnl_usd: float, close_reason: str) -> str:
+        """Generates a dynamic post-mortem lesson using the CEO Agent or intelligent rules"""
+        use_mock = os.getenv("USE_MOCK_AI", "false").lower() == "true"
+        
+        if use_mock:
+            if close_reason == "SL":
+                return (
+                    f"🔴 [Stop Loss]: ออเดอร์ {pos['signal']} ชนตัดขาดทุนที่ ${exit_price:.2f} (ลบ ${abs(pnl_usd):.2f}). "
+                    f"สาเหตุ: แรงขายสถาบันหนาแน่นเกินกว่าแนวรับระยะสั้นจะต้านไหว หรืออาจเกิดการกวาดสภาพคล่องของฝั่ง Market Maker (Liquidity Sweep) "
+                    f"ก่อนจะดึงราคากลับ ในอนาคตควรเพิ่มความระมัดระวังในการตั้ง SL ให้กว้างขึ้น หรือเลี่ยงการเข้าเทรดในช่วงโมเมนตัมตลาดที่ผันผวนสูงค่ะ"
+                )
+            elif close_reason == "TP":
+                return (
+                    f"🟢 [Take Profit]: ออเดอร์ {pos['signal']} ปิดทำกำไรสำเร็จที่ ${exit_price:.2f} (บวก ${pnl_usd:.2f}). "
+                    f"สาเหตุ: ตลาดวิ่งเป็นเทรนด์ชัดเจนตามการวิเคราะห์ของทีมวิเคราะห์ Quant และ News โซนวิเคราะห์ Fibo Discount/Premium แข็งแกร่งมาก "
+                    f"และราคาขยับตัวอย่างมีระเบียบทำให้ชนเป้าอย่างแม่นยำค่ะ"
+                )
+            elif close_reason == "BREAKEVEN":
+                return (
+                    f"🛡️ [Breakeven / หน้าทุน]: ออเดอร์ {pos['signal']} ปิดที่จุดคุ้มทุน/หน้าทุนที่ ${exit_price:.2f}. "
+                    f"สาเหตุ: ราคาได้วิ่งบวกไประยะหนึ่งก่อนจะย้อนกลับลงมาชนจุดคุ้มทุน เป็นการบริหารความเสี่ยงที่ดีตามทฤษฎีทุนรักษาความปลอดภัยของระบบค่ะ"
+                )
+            else:
+                return (
+                    f"⚪ [Manual Close]: ออเดอร์ {pos['signal']} ถูกปิดด้วยมือที่ ${exit_price:.2f}. "
+                    f"สาเหตุ: ปิดออเดอร์ด้วยมือ หรือปิดก่อนหมดชั่วโมงเพื่อหลีกเลี่ยงความเสี่ยงจากข่าวนอกตารางค่ะ"
+                )
+
+        # Call OpenRouter API
+        prompt = f"""You are the CEO AI Trading Agent. Please write a short, professional, and clear Thai post-mortem reflection on why this trade closed.
+Trade Details:
+- Symbol: XAU/USD (Gold)
+- Direction: {pos['signal']}
+- Entry Price: ${pos['entry_price']:.2f}
+- Exit Price: ${exit_price:.2f}
+- TP Target: ${pos['take_profit']:.2f} | SL Target: ${pos['stop_loss']:.2f}
+- Lot Size: {pos['lot_size']:.2f} | Net P&L: ${pnl_usd:.2f}
+- Closed Reason: {close_reason} (SL means Hit Stop Loss, TP means Hit Take Profit, BREAKEVEN means Hit Breakeven/Entry price, MANUAL_CLOSE means closed manually by client or expert)
+- Original Consensus Reasoning: {pos['ceo_reasoning']}
+
+Write a concise reflection in Thai (2-3 sentences) explaining the market dynamics, whether the SL/TP logic was sound, and the lesson we should register in our memory to prevent future losses or repeat wins. Keep it professional, using polite assistant tone (ค่ะ/ครับ)."""
+        
+        try:
+            from agents import call_openrouter_api
+            result = call_openrouter_api(prompt, model=self.config.OPENROUTER_MODEL, max_tokens=1000)
+            if isinstance(result, dict):
+                return result.get("reasoning", str(result))
+            return str(result)
+        except Exception as e:
+            logger.error(f"Failed to generate AI reflection: {e}")
+            return f"ระบบขัดข้องในการเรียก AI: {str(e)}"
+
+    def _monitor_live_positions(self):
+        """Monitors all open live positions on MT5, checks if they are closed, calculates P&L, generates lessons, and reports to Discord."""
+        if not self.open_positions:
+            return
+
+        still_open = []
+        import MetaTrader5 as mt5
+
+        for pos in self.open_positions:
+            ticket = pos.get("ticket")
+            if not ticket:
+                continue
+
+            # Check if still open in MT5
+            if self.mt5_connector.is_position_open(ticket):
+                still_open.append(pos)
+                continue
+
+            # If not open, it has been closed! Let's get the deal details from MT5 history
+            logger.info(f"🔔 Live Position #{ticket} has been closed! Querying history from MT5...")
+            
+            # Fetch history deals for this position
+            if mt5.initialize():
+                deals = mt5.history_deals_get(position=ticket)
+            else:
+                deals = None
+            
+            entry_price = pos["entry_price"]
+            exit_price = pos["stop_loss"] # Fallback
+            pnl_usd = 0.0
+            close_comment = ""
+            
+            if deals:
+                # Find the deal representing the exit (DEAL_ENTRY_OUT = 1)
+                exit_deal = None
+                for deal in deals:
+                    if deal.entry == mt5.DEAL_ENTRY_OUT or deal.entry == 1:
+                        exit_deal = deal
+                        break
+                
+                if exit_deal:
+                    exit_price = exit_deal.price
+                    pnl_usd = exit_deal.profit
+                    close_comment = exit_deal.comment
+                    logger.info(f"Found exit deal for #{ticket}: Price={exit_price:.2f}, Profit={pnl_usd:.2f}, Comment='{close_comment}'")
+            else:
+                logger.warning(f"Could not fetch deals for closed position #{ticket} from MT5 history. Using fallback calculations.")
+                
+            # Determine close reason
+            close_reason = "MANUAL_CLOSE"
+            
+            # Check if comment contains sl/tp
+            if close_comment and "[sl" in close_comment.lower():
+                close_reason = "SL"
+            elif close_comment and "[tp" in close_comment.lower():
+                close_reason = "TP"
+            # Or check distance to entry price for breakeven (within $1.50)
+            elif abs(exit_price - entry_price) <= 1.5:
+                close_reason = "BREAKEVEN"
+            elif pos["signal"] == "BUY":
+                if exit_price <= pos["stop_loss"] + 0.5:
+                    close_reason = "SL"
+                elif exit_price >= pos["take_profit"] - 0.5:
+                    close_reason = "TP"
+            elif pos["signal"] == "SELL":
+                if exit_price >= pos["stop_loss"] - 0.5:
+                    close_reason = "SL"
+                elif exit_price <= pos["take_profit"] + 0.5:
+                    close_reason = "TP"
+
+            # Calculate pips
+            pnl_pips = (exit_price - entry_price) * 10.0 if pos["signal"] == "BUY" else (entry_price - exit_price) * 10.0
+
+            # Generate dynamic lesson learned using AI CEO or fallback
+            lesson_learned = self._generate_reflection_lesson(pos, exit_price, pnl_usd, close_reason)
+
+            # Append lesson to memory
+            self.learning_memory.append(lesson_learned)
+            logger.info(f"🧠 Live Trade Lesson Learned: {lesson_learned}")
+            
+            # 📢 Send detailed closure report to Discord
+            try:
+                self.discord_reporter.report_order_closed(
+                    signal=pos["signal"],
+                    entry_price=entry_price,
+                    close_price=exit_price,
+                    lot_size=pos["lot_size"],
+                    ticket=ticket,
+                    pnl_usd=pnl_usd,
+                    pnl_pips=pnl_pips,
+                    close_reason=close_reason,
+                    lesson_learned=lesson_learned
+                )
+            except Exception as e:
+                logger.error(f"Failed to send Discord close report: {e}")
+
+        # Update and save
+        self.open_positions = still_open
+        self._save_live_positions()
 
     def export_results(self, filename: str = "backtest_results.json"):
         """Export analysis results to JSON"""

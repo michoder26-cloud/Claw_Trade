@@ -126,12 +126,22 @@ class DiscordReporter:
         """Send a detailed report when an order is closed (TP hit, SL hit, or manual close)"""
         now = datetime.now().strftime("%d %b %Y | %H:%M:%S น.")
         is_win = pnl_usd >= 0
-        result_emoji = "🎉" if is_win else "💔"
-        result_word = "ปิดทำกำไรสำเร็จ (TP)" if close_reason == "TP" else (
-            "ปิดตัดขาดทุน (SL)" if close_reason == "SL" else f"ปิดออเดอร์ ({close_reason})"
-        )
-        result_color = 3066993 if is_win else 15158332  # Green or Red
-        pnl_sign = "+" if pnl_usd >= 0 else ""
+        
+        if close_reason == "BREAKEVEN":
+            result_emoji = "🛡️"
+            result_word = "ปิดจุดคุ้มทุน / หน้าทุน (Breakeven)"
+            result_color = 16776960  # Yellow
+            status_text = "🛡️ **BREAKEVEN**"
+        else:
+            result_emoji = "🎉" if is_win else "💔"
+            result_word = "ปิดทำกำไรสำเร็จ (TP)" if close_reason == "TP" else (
+                "ปิดตัดขาดทุน (SL)" if close_reason == "SL" else f"ปิดออเดอร์ ({close_reason})"
+            )
+            result_color = 3066993 if is_win else 15158332  # Green or Red
+            status_text = "🟢 **WIN**" if is_win else "🔴 **LOSS**"
+
+        pnl_sign = "+" if pnl_usd > 0 else ("" if pnl_usd == 0 else "-")
+        abs_pnl_usd = abs(pnl_usd)
 
         payload = {
             "embeds": [
@@ -142,19 +152,18 @@ class DiscordReporter:
                         f"หมายเลขตั๋ว: **#{ticket or 'N/A'}** | สัญลักษณ์: **XAU/USD**\n"
                         f"คำสั่งเดิม: **{signal}** | ขนาด: **{lot_size:.2f} Lot**\n"
                         f"ราคาเปิด: **${entry_price:.2f}** → ราคาปิด: **${close_price:.2f}**\n\n"
-                        f"สถานะ: {'🟢 **WIN**' if is_win else '🔴 **LOSS**'} "
-                        f"({pnl_sign}{pnl_pips:.0f} Pips)\n"
-                        f"กำไร/ขาดทุนสุทธิ: **{pnl_sign}${pnl_usd:.2f}**"
+                        f"สถานะ: {status_text} ({pnl_pips:+.1f} Pips)\n"
+                        f"กำไร/ขาดทุนสุทธิ: **{pnl_sign}${abs_pnl_usd:.2f}**"
                     ),
                     "color": result_color,
                     "timestamp": datetime.utcnow().isoformat(),
                 },
                 {
-                    "title": "📝 วิเคราะห์เหตุผล" + (" (ทำไมชนะ)" if is_win else " (ทำไมขาดทุน)"),
+                    "title": "📝 วิเคราะห์เหตุผล" + (" (ทำไมชนะ)" if close_reason == "TP" else (" (ทำไมถึงเสมอตัว)" if close_reason == "BREAKEVEN" else " (ทำไมขาดทุน)")),
                     "description": (
                         f"**สาเหตุการปิดออเดอร์:** {close_reason}\n\n"
                         f"**วิเคราะห์:** {lesson_learned[:1000]}\n\n"
-                        f"💡 **บทเรียนบันทึกลง Memory:** {'กลยุทธ์นี้ทำงานได้ดี ให้คงใช้ต่อไป' if is_win else 'บทเรียนนี้ถูกฝังลงสมองเพื่อป้องกันไม่ให้เกิดซ้ำ'}"
+                        f"💡 **บทเรียนบันทึกลง Memory:** {'กลยุทธ์นี้ทำงานได้ดี ให้คงใช้ต่อไป' if close_reason == 'TP' else ('เป็นการป้องกันความเสี่ยงที่ดีรักษาพอร์ตไว้ก่อน' if close_reason == 'BREAKEVEN' else 'บทเรียนนี้ถูกฝังลงสมองเพื่อป้องกันไม่ให้เกิดซ้ำ')}"
                     ),
                     "color": 10181046,
                     "footer": {"text": "AI grows wiser after every trade • Auto-Learning enabled"},
