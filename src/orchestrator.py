@@ -359,15 +359,16 @@ class MasterOrchestrator:
 
         # Validate minimum decision confidence (78% threshold for SMC setups)
         if decision in ["BUY", "SELL"] and confidence >= 0.78:
-            # 👑 Boss Sniper Adaptive Rule: 1:2 Ratio adjusted dynamically based on market volatility
+            # 👑 Boss Sniper Adaptive Rule: Ratio adjusted dynamically based on market volatility and config
+            rr = getattr(self.config, "RISK_REWARD_RATIO", 2.0)
             if regime == "HIGH_VOLATILITY":
                 sl_distance = 25.0
-                tp_distance = 50.0
-                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:2 R:R)")
+                tp_distance = sl_distance * rr
+                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:{rr} R:R)")
             else:
                 sl_distance = 15.0
-                tp_distance = 30.0
-                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:2 R:R)")
+                tp_distance = sl_distance * rr
+                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:{rr} R:R)")
             
             if decision == "BUY":
                 sl_price = row['close'] - sl_distance
@@ -529,9 +530,10 @@ class MasterOrchestrator:
         
         # 📢 DISCORD REPORT: System Online (Check if connection works)
         try:
+            rr_display = getattr(self.config, "RISK_REWARD_RATIO", 2.0)
             self.discord_reporter.report_system_status(
                 title="🚀 GOLD SNIPER AI: ONLINE",
-                message="บอทเริ่มทำงานในโหมด LIVE เรียบร้อยแล้วครับ!\nสแตนด์บายเฝ้าทองคำด้วยกลยุทธ์ Boss Sniper 1:3 🏹"
+                message=f"บอทเริ่มทำงานในโหมด LIVE เรียบร้อยแล้วครับ!\nสแตนด์บายเฝ้าทองคำด้วยกลยุทธ์ Boss Sniper 1:{rr_display} 🏹"
             )
         except: pass
         
