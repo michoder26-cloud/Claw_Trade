@@ -112,6 +112,8 @@ class MasterOrchestrator:
             interval = "1h"
             self.market_data = self.data_handler.prepare_for_analysis(symbol, fetch_start, end, interval=interval)
         
+        self.interval = interval
+        
         # Calculate EMA 50, 200 & macro across the full warmup buffer
         self.market_data['ema_50'] = self.market_data['close'].ewm(span=50, adjust=False).mean()
         self.market_data['ema_200'] = self.market_data['close'].ewm(span=200, adjust=False).mean()
@@ -183,6 +185,9 @@ class MasterOrchestrator:
         - Tokyo/London Transition: 04:00 - 10:59 UTC
         - New York Main Session: 12:00 - 17:59 UTC
         """
+        if getattr(self, "interval", "1h") == "1d":
+            return True
+
         hour = current_time.hour
         
         # Window 1: Asia/London Sniper (04:00 - 10:59 UTC)
@@ -482,13 +487,28 @@ class MasterOrchestrator:
                     except Exception as dr_err:
                         logger.error(f"Discord report failed: {dr_err}")
             else:
+                # Determine adaptive trailing stop parameters based on market regime
+                t_trigger = 0.0
+                t_lock = 0.0
+                use_trailing_stop_env = os.getenv("USE_TRAILING_STOP", "false").lower()
+                if use_trailing_stop_env == "adaptive":
+                    if regime in ["RANGING", "HIGH_VOLATILITY"]:
+                        t_trigger = 10.0
+                        t_lock = 6.0
+                    else:
+                        # Disable trailing stop during TRENDING to let profit run to TP without getting cut early
+                        t_trigger = 0.0
+                        t_lock = 0.0
+
                 trade_executed = self.backtester.execute_trade(
                     timestamp=str(timestamp),
                     price=row['close'],
                     signal=decision,
                     position_size=lot_size,
                     stop_loss=sl_price,
-                    take_profit=tp_price
+                    take_profit=tp_price,
+                    trailing_trigger=t_trigger,
+                    trailing_lock=t_lock
                 )
             analysis_record["trade_executed"] = trade_executed
             if trade_executed:
@@ -540,10 +560,21 @@ class MasterOrchestrator:
         logger.info(f"Total Candles: {len(self.market_data)}")
         logger.info(f"Analysis Sample Rate: Every {sample_every_n} candles\n")
 
+        # Track month for recurring DCA deposits
+        last_month = None
+
         # Run cycle
         for idx in range(0, len(self.market_data), sample_every_n):
             timestamp = self.market_data.index[idx]
             row = self.market_data.iloc[idx]
+
+            # Monthly DCA Deposit: Inject 10,000 cents ($100) at each new month if USE_DCA is True
+            dt = pd.to_datetime(timestamp)
+            current_month = dt.month
+            if os.getenv("USE_DCA", "true").lower() == "true":
+                if last_month is not None and current_month != last_month:
+                    self.backtester.deposit(10000.0)
+            last_month = current_month
 
             try:
                 self.analyze_at_timestamp(timestamp, row)

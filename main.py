@@ -32,6 +32,10 @@ def run_backtest(args):
 
     orchestrator = MasterOrchestrator(mode="BACKTEST")
     
+    if getattr(args, 'risk_pct', None) is not None:
+        orchestrator.config.POSITION_SIZE_PERCENT = args.risk_pct
+        logger.info(f"Setting position size risk percentage to {args.risk_pct}%")
+    
     # Ensure interval has units (m/h/d)
     interval = args.interval
     if interval.isdigit():
@@ -118,6 +122,7 @@ def main():
     backtest_parser.add_argument('--start-date', help='Start date (YYYY-MM-DD)')
     backtest_parser.add_argument('--end-date', help='End date (YYYY-MM-DD)')
     backtest_parser.add_argument('--sample-rate', type=int, default=1, help='Sample every N candles (default: 1)')
+    backtest_parser.add_argument('--risk-pct', type=float, help='Position size risk percentage (override config)')
     backtest_parser.add_argument('--output', help='Output file for results (default: backtest_results.json)')
 
     # Paper trading command

@@ -1,6 +1,7 @@
 """Backtesting framework for multi-agent trading system"""
 import pandas as pd
 import numpy as np
+import os
 from typing import List, Dict, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -25,6 +26,8 @@ class Trade:
     profit_loss_pct: float = 0.0
     status: str = "OPEN"  # OPEN, CLOSED, STOPPED_OUT, TAKE_PROFIT
     trailed: bool = False
+    trailing_trigger: float = 0.0
+    trailing_lock: float = 0.0
 
     def close(self, exit_price: float, exit_time: str, contract_size: float = 100.0):
         """Close the trade"""
@@ -64,15 +67,24 @@ class Backtester:
     def __init__(self, initial_balance: float, max_open_positions: int = 2):
         self.initial_balance = initial_balance
         self.current_balance = initial_balance
+        self.total_deposited = initial_balance
         self.max_open_positions = max_open_positions
         self.trades: List[Trade] = []
         self.open_positions: List[Trade] = []
         self.equity_curve: List[float] = [initial_balance]
         self.balance_history: List[Dict] = []
 
+    def deposit(self, amount: float):
+        """Deposit funds into the account (e.g. monthly DCA)"""
+        self.current_balance += amount
+        self.total_deposited += amount
+        self.equity_curve.append(self.current_balance)
+        logger.info(f"💰 [DCA DEPOSIT]: Injected ${amount:,.2f} | Total Deposited: ${self.total_deposited:,.2f} | Current Balance: ${self.current_balance:,.2f}")
+
     def execute_trade(self, timestamp: str, price: float, signal: str,
                      position_size: float, stop_loss: float,
-                     take_profit: float) -> bool:
+                     take_profit: float, trailing_trigger: float = 0.0,
+                     trailing_lock: float = 0.0) -> bool:
         """
         Execute a trade signal
 
@@ -99,7 +111,9 @@ class Backtester:
             signal=signal,
             position_size=position_size,
             stop_loss=stop_loss,
-            take_profit=take_profit
+            take_profit=take_profit,
+            trailing_trigger=trailing_trigger,
+            trailing_lock=trailing_lock
         )
 
         self.open_positions.append(trade)
@@ -109,20 +123,28 @@ class Backtester:
 
     def check_stop_levels(self, timestamp: str, current_price: float, high_price: float, low_price: float):
         """Check if any open positions hit stop-loss or take-profit levels"""
+        use_trailing = os.getenv("USE_TRAILING_STOP", "false").lower() == "true"
+        trigger_dist = float(os.getenv("TRAILING_STOP_TRIGGER", 10.0))
+        lock_profit = float(os.getenv("TRAILING_STOP_LOCK", 6.0))
 
         closed_positions = []
 
         for trade in self.open_positions:
-            # 1. Update Trailing Stop / Breakeven Logic FIRST: If profit conditions met, move SL to entry + $6 (lock massive profit)
-            if not trade.trailed:
-                if trade.signal == "BUY" and (high_price - trade.entry_price) >= 10.0:
-                    trade.stop_loss = trade.entry_price + 6.0
+            # 1. Update Trailing Stop / Breakeven Logic FIRST
+            # Resolve trigger and lock values (prioritize trade-specific settings over env defaults)
+            trade_use_trailing = use_trailing or (trade.trailing_trigger > 0.0)
+            trade_trigger = trade.trailing_trigger if trade.trailing_trigger > 0.0 else trigger_dist
+            trade_lock = trade.trailing_lock if trade.trailing_lock > 0.0 else lock_profit
+
+            if trade_use_trailing and not trade.trailed:
+                if trade.signal == "BUY" and (high_price - trade.entry_price) >= trade_trigger:
+                    trade.stop_loss = trade.entry_price + trade_lock
                     trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +$6)")
-                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= 10.0:
-                    trade.stop_loss = trade.entry_price - 6.0
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +${trade_lock})")
+                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= trade_trigger:
+                    trade.stop_loss = trade.entry_price - trade_lock
                     trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +$6)")
+                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +${trade_lock})")
 
             exit_price = None
             exit_reason = None
@@ -191,7 +213,7 @@ class Backtester:
                 stats.losing_trades += 1
                 stats.gross_loss += abs(trade.profit_loss)
 
-        stats.net_profit = self.current_balance - self.initial_balance
+        stats.net_profit = self.current_balance - self.total_deposited
         stats.win_rate = (stats.winning_trades / stats.total_trades * 100) if stats.total_trades > 0 else 0
         stats.avg_profit_per_trade = stats.net_profit / stats.total_trades if stats.total_trades > 0 else 0
 
@@ -205,11 +227,11 @@ class Backtester:
         if self.equity_curve:
             running_max = np.maximum.accumulate(self.equity_curve)
             drawdown = (np.array(self.equity_curve) - running_max) / running_max
-            stats.max_drawdown = np.min(drawdown) * self.initial_balance
+            stats.max_drawdown = np.min(drawdown) * self.total_deposited
             stats.max_drawdown_pct = np.min(drawdown) * 100
 
         # Return percentage
-        stats.return_pct = (stats.net_profit / self.initial_balance) * 100
+        stats.return_pct = (stats.net_profit / self.total_deposited) * 100
 
         # Sharpe Ratio (simplified - daily returns)
         if len(self.equity_curve) > 1:
@@ -228,8 +250,9 @@ class Backtester:
         report += "="*60 + "\n"
 
         report += f"Initial Balance: ${self.initial_balance:,.2f}\n"
-        report += f"Final Balance: ${self.current_balance:,.2f}\n"
-        report += f"Net Profit/Loss: ${stats.net_profit:,.2f} ({stats.return_pct:.2f}%)\n\n"
+        report += f"Total Deposited: ${self.total_deposited:,.2f}\n"
+        report += f"Final Balance:   ${self.current_balance:,.2f}\n"
+        report += f"Net Profit/Loss: ${stats.net_profit:,.2f} ({stats.return_pct:.2f}% of total deposited)\n\n"
 
         report += "TRADE STATISTICS:\n"
         report += f"Total Trades: {stats.total_trades}\n"
