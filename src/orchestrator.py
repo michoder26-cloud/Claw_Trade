@@ -332,8 +332,11 @@ class MasterOrchestrator:
             return {"status": "SKIPPED", "reason": "DAILY_LIMIT_REACHED"}
 
         # 🛡️ Boss Filter 2: Check Golden Hour Filter (UTC)
-        if not self.is_golden_hour(timestamp):
-            logger.info(f"   ➜ Sniper Engine: Outside Golden Hours (Hour: {timestamp.hour} UTC). Standing aside.")
+        check_time = timestamp
+        if self.mode == "LIVE":
+            check_time = datetime.utcnow()
+        if not self.is_golden_hour(check_time):
+            logger.info(f"   ➜ Sniper Engine: Outside Golden Hours (Hour: {check_time.hour} UTC). Standing aside.")
             return {"status": "SKIPPED", "reason": "OUTSIDE_GOLDEN_HOURS"}
 
         analysis_record = {
