@@ -264,7 +264,7 @@ class BullAgent:
                 if fibo_zone == "all_in_market_maker" and rsi < 40 and macd_cross != "bearish_cross":
                     signal = "BUY"
                     confidence = 0.92
-                    reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is oversold. Strong institutional liquidity sweep expected."
+                    reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is oversold. Strong institutional liquidity sweep expected. [OVERRIDE_LOT_MULTIPLIER=3.0] [TIGHT_SL=True]"
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Lower support + oversold)
                 elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and rsi < 42:
                     signal = "BUY"
@@ -301,6 +301,14 @@ class BullAgent:
                     signal = "BUY"
                     confidence = 0.84
                     reasoning = f"MMTC v2.0 [Setup D - Daily Wick Fill BUY]: High-conviction daily lower wick rejection ({d1_lower_wick:.2f}) aligned with Fibo Zone ({fibo_zone}). Price expected to expand upward."
+
+            # Setup E: Fibonacci Circle Convergence
+            if signal == "HOLD":
+                fibo_circle_zone = quant_analysis.get("fibo_circle_zone", "neutral")
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi < 45:
+                    signal = "BUY"
+                    confidence = 0.85
+                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Support]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi:.1f}) oversold."
 
             return AnalysisResult(
                 agent_name="BullishStrategist",
@@ -370,7 +378,7 @@ class BearAgent:
                 if fibo_zone == "all_in_market_maker" and rsi > 60 and macd_cross != "bullish_cross":
                     signal = "SELL"
                     confidence = 0.92
-                    reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is overbought. Strong institutional liquidity sweep expected."
+                    reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is overbought. Strong institutional liquidity sweep expected. [OVERRIDE_LOT_MULTIPLIER=3.0] [TIGHT_SL=True]"
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Upper resistance + overbought)
                 elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and rsi > 58:
                     signal = "SELL"
@@ -407,6 +415,14 @@ class BearAgent:
                     signal = "SELL"
                     confidence = 0.84
                     reasoning = f"MMTC v2.0 [Setup D - Daily Wick Fill SELL]: High-conviction daily upper wick rejection ({d1_upper_wick:.2f}) aligned with Fibo Zone ({fibo_zone}). Price expected to expand downward."
+
+            # Setup E: Fibonacci Circle Convergence
+            if signal == "HOLD":
+                fibo_circle_zone = quant_analysis.get("fibo_circle_zone", "neutral")
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi > 55:
+                    signal = "SELL"
+                    confidence = 0.85
+                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Resistance]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi:.1f}) overbought."
 
             return AnalysisResult(
                 agent_name="BearishStrategist",

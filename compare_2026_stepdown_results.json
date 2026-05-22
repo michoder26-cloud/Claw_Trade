@@ -1,0 +1,126 @@
+{
+  "stepdown": {
+    "label": "Step-Down Risk (Jan: 25% -> Feb: 20% -> Mar: 15% -> Apr: 10% -> May: 6%)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 84746.0,
+    "net_profit": 34746.0,
+    "return_pct": 69.492,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 2.7628614916286147,
+    "max_drawdown": -34200.0,
+    "max_drawdown_pct": -68.4,
+    "monthly_breakdown": {
+      "2026-01": {
+        "trades": 6,
+        "wins": 2,
+        "losses": 4,
+        "pnl": -4104.0
+      },
+      "2026-02": {
+        "trades": 6,
+        "wins": 5,
+        "losses": 1,
+        "pnl": 1959.0
+      },
+      "2026-03": {
+        "trades": 4,
+        "wins": 3,
+        "losses": 1,
+        "pnl": -296.9999999999998
+      },
+      "2026-04": {
+        "trades": 10,
+        "wins": 9,
+        "losses": 1,
+        "pnl": 22548.0
+      },
+      "2026-05": {
+        "trades": 8,
+        "wins": 8,
+        "losses": 0,
+        "pnl": 14640.0
+      }
+    }
+  },
+  "baseline": {
+    "label": "Constant Risk (6% Constant)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 77259.0,
+    "net_profit": 27259.0,
+    "return_pct": 54.518,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 4.452691576947435,
+    "max_drawdown": -10975.0,
+    "max_drawdown_pct": -21.95,
+    "jan_trades": [
+      {
+        "entry_time": "2026-01-13 16:00:00",
+        "exit_time": "2026-01-13 16:00:00",
+        "signal": "BUY",
+        "entry_price": 4629.75,
+        "exit_price": 4614.75,
+        "position_size": 0.4,
+        "profit_loss": -600.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-14 04:00:00",
+        "exit_time": "2026-01-15 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4620.51,
+        "exit_price": 4595.51,
+        "position_size": 0.23,
+        "profit_loss": -575.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-15 17:00:00",
+        "exit_time": "2026-01-16 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4615.36,
+        "exit_price": 4600.36,
+        "position_size": 0.35,
+        "profit_loss": -525.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-20 07:00:00",
+        "exit_time": "2026-01-20 07:00:00",
+        "signal": "BUY",
+        "entry_price": 4714.47,
+        "exit_price": 4699.47,
+        "position_size": 0.33,
+        "profit_loss": -495.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-22 12:00:00",
+        "exit_time": "2026-01-23 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4828.88,
+        "exit_price": 4903.88,
+        "position_size": 0.19,
+        "profit_loss": 1425.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-27 12:00:00",
+        "exit_time": "2026-01-27 12:00:00",
+        "signal": "BUY",
+        "entry_price": 5086.23,
+        "exit_price": 5092.23,
+        "position_size": 0.22,
+        "profit_loss": 132.0,
+        "status": "CLOSED"
+      }
+    ]
+  }
+}

@@ -42,11 +42,12 @@ class MasterOrchestrator:
         self.bear_agent = BearAgent()
         self.ceo_agent = CEOAgent()
 
-        # Initialize backtester
-        self.backtester = Backtester(
-            initial_balance=self.config.INITIAL_BALANCE,
-            max_open_positions=self.config.MAX_OPEN_POSITIONS
-        )
+        if mode == "BACKTEST":
+            # Initialize Backtester component
+            self.backtester = Backtester(
+                initial_balance=self.config.INITIAL_BALANCE,
+                max_open_positions=self.config.MAX_OPEN_POSITIONS
+            )
 
         # Data handler
         self.data_handler = DataHandler()
@@ -160,13 +161,50 @@ class MasterOrchestrator:
         else:
             return "RANGING"
 
+    def _detect_market_structure(self, df: pd.DataFrame) -> tuple:
+        """Detect the most recent major structural Swing High and Swing Low."""
+        highs = df['high'].values
+        lows = df['low'].values
+        
+        swing_highs = []
+        swing_lows = []
+        
+        # 5-bar fractal detection
+        for i in range(2, len(df) - 2):
+            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+                swing_highs.append((i, highs[i]))
+            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+                swing_lows.append((i, lows[i]))
+                
+        if not swing_highs or not swing_lows:
+            return df['high'].max(), df['low'].min()
+            
+        # Focus on the most recent structural swings (e.g., last 200 bars)
+        recent_sh = [s for s in swing_highs if s[0] > len(df) - 200]
+        recent_sl = [s for s in swing_lows if s[0] > len(df) - 200]
+        
+        if not recent_sh or not recent_sl:
+            return df['high'].max(), df['low'].min()
+            
+        max_sh = max(recent_sh, key=lambda x: x[1])
+        min_sl = min(recent_sl, key=lambda x: x[1])
+        
+        # We need to draw Left to Right. 
+        # If Bullish (Low happened before High), anchor from Low to High.
+        # If Bearish (High happened before Low), anchor from High to Low.
+        # Returning absolute values is fine, we just need the levels.
+        return max_sh[1], min_sl[1]
+
     def _calculate_fibonacci_levels(self, recent_data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate standard Fibonacci Retracement levels across full macro baseline (1200 candles / 50 trading days)"""
+        """Calculate structural Fibonacci Retracement levels (Wick to Wick)"""
         if len(recent_data) < 50:
             return {}
-        high = recent_data['high'].max()
-        low = recent_data['low'].min()
+            
+        high, low = self._detect_market_structure(recent_data)
         diff = high - low
+        
+        if diff == 0:
+            return {}
         
         return {
             "0.0% (High)": round(high, 2),
@@ -178,6 +216,75 @@ class MasterOrchestrator:
             "88.7%": round(high - 0.887 * diff, 2),
             "100.0% (Low)": round(low, 2)
         }
+
+    def _calculate_fibonacci_circles(self, recent_data: pd.DataFrame, current_price: float) -> str:
+        """Calculate Normalized Fibonacci Circles based on Market Structure (Swing High/Low)"""
+        if len(recent_data) < 50:
+            return "neutral"
+            
+        highs = recent_data['high'].values
+        lows = recent_data['low'].values
+        
+        swing_highs = []
+        swing_lows = []
+        
+        for i in range(2, len(recent_data) - 2):
+            if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+                swing_highs.append((i, highs[i]))
+            if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+                swing_lows.append((i, lows[i]))
+                
+        recent_sh = [s for s in swing_highs if s[0] > len(recent_data) - 200]
+        recent_sl = [s for s in swing_lows if s[0] > len(recent_data) - 200]
+        
+        if not recent_sh or not recent_sl:
+            return "neutral"
+            
+        max_sh = max(recent_sh, key=lambda x: x[1])
+        min_sl = min(recent_sl, key=lambda x: x[1])
+        
+        i_high, high = max_sh
+        i_low, low = min_sl
+        i_current = len(recent_data) - 1
+        
+        delta_time = abs(i_high - i_low)
+        delta_price = abs(high - low)
+        
+        if delta_time == 0 or delta_price == 0:
+            return "neutral"
+            
+        # Determine center (anchor) - usually the older of the two swing points
+        if i_low < i_high:
+            # Bullish macro trend
+            i_center = i_low
+            p_center = low
+        else:
+            # Bearish macro trend
+            i_center = i_high
+            p_center = high
+            
+        # Calculate normalized distance of the current bar from the center
+        dx_norm = (i_current - i_center) / delta_time
+        dy_norm = (current_price - p_center) / delta_price
+        d_current = (dx_norm**2 + dy_norm**2)**0.5
+        
+        # Base Distance (Radius 1.0) is the Euclidean distance between Swing High and Swing Low in normalized space
+        # Since dx_norm between them is 1.0 and dy_norm is 1.0, D = sqrt(1^2 + 1^2) = 1.414
+        D = 1.41421356
+        
+        # Current relative radius
+        r_current = d_current / D
+        
+        # Check intersections with key Fibo Circle radii (margin of error +/- 0.05)
+        margin = 0.05
+        if abs(r_current - 0.382) < margin or abs(r_current - 0.618) < margin:
+            return "fibo_circle_golden"
+        elif abs(r_current - 0.786) < margin or abs(r_current - 0.887) < margin:
+            return "fibo_circle_reversal"
+        elif abs(r_current - 1.0) < margin or abs(r_current - 1.618) < margin:
+            return "fibo_circle_extreme"
+            
+        return "neutral"
 
     def is_golden_hour(self, current_time: datetime) -> bool:
         """
@@ -290,6 +397,10 @@ class MasterOrchestrator:
                 fibo_zone = "all_in_market_maker"
                 logger.info(f"   ➜ Daily Fibo Zone: 🚨 Market Maker All-In Zone (78.6%-88.7%)!")
 
+        fibo_circle_zone = self._calculate_fibonacci_circles(daily_data, close)
+        if fibo_circle_zone != "neutral":
+            logger.info(f"   ⭕ Fibo Circle Zone: Hitting Reversal Arc ({fibo_circle_zone})")
+
         # Calculate daily parameters up to the current hour (Wick Fill Theory)
         current_day_bars = daily_data[daily_data.index.normalize() == timestamp.normalize()]
         if not current_day_bars.empty:
@@ -311,11 +422,40 @@ class MasterOrchestrator:
             d1_upper_wick = d1_high - d1_open
             d1_lower_wick = d1_close - d1_low
 
-        # Calculate local Support/Resistance over the last 24 H1 bars (excluding current bar)
-        h1_lookback = daily_data.iloc[:-1].tail(24)
-        if not h1_lookback.empty:
-            local_support = h1_lookback['low'].min()
-            local_resistance = h1_lookback['high'].max()
+        # Structure-Based S/R Detection: Find Swing Points tested >= 2 times
+        sr_lookback = daily_data.iloc[:-1].tail(60)  # 60 bars lookback for structure
+        if len(sr_lookback) >= 5:
+            tolerance = row['close'] * 0.003  # 0.3% tolerance for level clustering
+            # Find swing lows (support candidates)
+            swing_lows = []
+            for i in range(2, len(sr_lookback) - 2):
+                if (sr_lookback['low'].iloc[i] <= sr_lookback['low'].iloc[i-1] and
+                    sr_lookback['low'].iloc[i] <= sr_lookback['low'].iloc[i-2] and
+                    sr_lookback['low'].iloc[i] <= sr_lookback['low'].iloc[i+1] and
+                    sr_lookback['low'].iloc[i] <= sr_lookback['low'].iloc[i+2]):
+                    swing_lows.append(sr_lookback['low'].iloc[i])
+            # Find swing highs (resistance candidates)
+            swing_highs = []
+            for i in range(2, len(sr_lookback) - 2):
+                if (sr_lookback['high'].iloc[i] >= sr_lookback['high'].iloc[i-1] and
+                    sr_lookback['high'].iloc[i] >= sr_lookback['high'].iloc[i-2] and
+                    sr_lookback['high'].iloc[i] >= sr_lookback['high'].iloc[i+1] and
+                    sr_lookback['high'].iloc[i] >= sr_lookback['high'].iloc[i+2]):
+                    swing_highs.append(sr_lookback['high'].iloc[i])
+            # Find key support: levels tested >= 2 times, closest below current price
+            support_levels = []
+            for lvl in swing_lows:
+                tests = sum(1 for s in swing_lows if abs(s - lvl) <= tolerance)
+                if tests >= 2 and lvl < row['close']:
+                    support_levels.append(lvl)
+            local_support = max(support_levels) if support_levels else sr_lookback['low'].min()
+            # Find key resistance: levels tested >= 2 times, closest above current price
+            resistance_levels = []
+            for lvl in swing_highs:
+                tests = sum(1 for s in swing_highs if abs(s - lvl) <= tolerance)
+                if tests >= 2 and lvl > row['close']:
+                    resistance_levels.append(lvl)
+            local_resistance = min(resistance_levels) if resistance_levels else sr_lookback['high'].max()
         else:
             local_support = row['low']
             local_resistance = row['high']
@@ -329,6 +469,7 @@ class MasterOrchestrator:
             "macd_signal": row.get("macd_signal", 0.0),
             "macd_cross": macd_cross,
             "fibo_zone": fibo_zone,
+            "fibo_circle_zone": fibo_circle_zone,
             "ema_5": row.get("ema_5", row["close"]),
             "sma_36": row.get("sma_36", row["close"]),
             "bb_upper": row.get("bb_upper", row["close"]),
@@ -389,23 +530,71 @@ class MasterOrchestrator:
 
         # Validate minimum decision confidence (78% threshold for SMC setups)
         if decision in ["BUY", "SELL"] and confidence >= 0.78:
-            # 👑 Boss Sniper Adaptive Rule: Ratio adjusted dynamically based on market volatility and config
+            # ATR-Based Dynamic SL (Anti-SL Hunt Upgrade)
             rr = getattr(self.config, "RISK_REWARD_RATIO", 2.0)
-            if regime == "HIGH_VOLATILITY":
-                sl_distance = 25.0
-                tp_distance = sl_distance * rr
-                logger.info(f"   🎯 Boss Sniper [HIGH VOLATILITY MODE]: Set dynamic {tp_distance}/{sl_distance} (1:{rr} R:R)")
+            atr_period = getattr(self.config, "ATR_PERIOD", 5)
+            atr_multiplier = getattr(self.config, "ATR_SL_MULTIPLIER", 1.0)
+
+            # Calculate ATR from recent daily data
+            atr_data = daily_data.tail(atr_period + 1)
+            if len(atr_data) >= 2:
+                tr_values = []
+                for i in range(1, len(atr_data)):
+                    h = atr_data['high'].iloc[i]
+                    l = atr_data['low'].iloc[i]
+                    pc = atr_data['close'].iloc[i-1]
+                    tr = max(h - l, abs(h - pc), abs(l - pc))
+                    tr_values.append(tr)
+                atr_value = sum(tr_values[-atr_period:]) / min(len(tr_values), atr_period)
             else:
-                sl_distance = 15.0
+                atr_value = 20.0  # Fallback
+
+            if os.getenv("USE_ATR_SL", "true").lower() == "true":
+                sl_distance = max(atr_value * atr_multiplier, 5.0)  # Minimum 5 USD SL
                 tp_distance = sl_distance * rr
-                logger.info(f"   🎯 Boss Sniper [STANDARD MODE]: Set standard {tp_distance}/{sl_distance} (1:{rr} R:R)")
+
+                # Adjust SL to sit behind structure level
+                if decision == "BUY":
+                    structure_sl = local_support - 2.0  # 2 USD below key support
+                    raw_sl = row['close'] - sl_distance
+                    sl_price = min(raw_sl, structure_sl) if structure_sl < row['close'] else raw_sl
+                    sl_distance = row['close'] - sl_price  # Recalculate actual SL distance
+                    tp_distance = sl_distance * rr
+                    tp_price = row['close'] + tp_distance
+                else:
+                    structure_sl = local_resistance + 2.0  # 2 USD above key resistance
+                    raw_sl = row['close'] + sl_distance
+                    sl_price = max(raw_sl, structure_sl) if structure_sl > row['close'] else raw_sl
+                    sl_distance = sl_price - row['close']
+                    tp_distance = sl_distance * rr
+                    tp_price = row['close'] - tp_distance
+
+                logger.info(f"   🎯 ATR-SL [ATR({atr_period})={atr_value:.2f}]: SL={sl_distance:.2f} / TP={tp_distance:.2f} (1:{rr} R:R)")
+            else:
+                sl_distance = getattr(self.config, "FIXED_SL_USD", 10.0)
+                tp_distance = sl_distance * rr
+                if decision == "BUY":
+                    sl_price = row['close'] - sl_distance
+                    tp_price = row['close'] + tp_distance
+                else:
+                    sl_price = row['close'] + sl_distance
+                    tp_price = row['close'] - tp_distance
+                logger.info(f"   🎯 FIXED-SL: SL={sl_distance:.2f} / TP={tp_distance:.2f} (1:{rr} R:R)")
+
+            # Check for specific SMC / Fibo Circle Overrides
+            reasoning = ceo_res.get("reasoning", "")
+            is_tight_sl = "[TIGHT_SL=True]" in reasoning
             
-            if decision == "BUY":
-                sl_price = row['close'] - sl_distance
-                tp_price = row['close'] + tp_distance
-            else:
-                sl_price = row['close'] + sl_distance
-                tp_price = row['close'] - tp_distance
+            if is_tight_sl:
+                # Override SL to a very tight invalidation (e.g., 3.0 USD)
+                sl_distance = 3.0
+                if decision == "BUY":
+                    sl_price = row['close'] - sl_distance
+                    tp_price = row['close'] + (sl_distance * 10) # 1:10 RR for All-In Zones
+                else:
+                    sl_price = row['close'] + sl_distance
+                    tp_price = row['close'] - (sl_distance * 10)
+                logger.info(f"   🔪 TIGHT SL OVERRIDE: SL={sl_distance:.2f} / TP={(sl_distance * 10):.2f} (1:10 R:R)")
 
             # Dynamic Risk-Based Position Sizing (Money Management)
             balance = self.backtester.current_balance
@@ -421,9 +610,12 @@ class MasterOrchestrator:
                 computed_lot = risk_amount / (sl_distance * contract_size)
                 lot_size = max(0.01, round(computed_lot, 2))
             
-            # Aggressive Scaling: Triple lot size if CEO is extremely confident
+            # Aggressive Scaling: Triple lot size if CEO is extremely confident OR if OVERRIDE_LOT_MULTIPLIER is present
             ceo_confidence = ceo_res.get("confidence", 0.85)
-            if ceo_confidence >= 0.95:
+            if "[OVERRIDE_LOT_MULTIPLIER=3.0]" in reasoning:
+                lot_size *= 3.0
+                logger.info(f"   🔥 FIBO CIRCLE ALL-IN OVERRIDE DETECTED: Scaling Lot Size to {lot_size:.2f} (3x Risk!)")
+            elif ceo_confidence >= 0.95:
                 lot_size *= 3.0  # Triple power
                 logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (3x)")
             elif ceo_confidence >= 0.90:
@@ -508,7 +700,8 @@ class MasterOrchestrator:
                     stop_loss=sl_price,
                     take_profit=tp_price,
                     trailing_trigger=t_trigger,
-                    trailing_lock=t_lock
+                    trailing_lock=t_lock,
+                    original_sl_distance=sl_distance
                 )
             analysis_record["trade_executed"] = trade_executed
             if trade_executed:
@@ -540,12 +733,13 @@ class MasterOrchestrator:
                 logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
         self.analysis_history.append(analysis_record)
-        try:
-            import json
-            with open("trade_history_log.json", "w", encoding="utf-8") as f:
-                json.dump(self.analysis_history, f, indent=2, default=str)
-        except Exception as e:
-            logger.error(f"Failed to persist trade_history_log.json: {e}")
+        if self.mode == "LIVE":
+            try:
+                import json
+                with open("trade_history_log.json", "w", encoding="utf-8") as f:
+                    json.dump(self.analysis_history, f, indent=2, default=str)
+            except Exception as e:
+                logger.error(f"Failed to persist trade_history_log.json: {e}")
         return analysis_record
 
     def run_backtest(self, sample_every_n: int = 24) -> str:
@@ -589,6 +783,14 @@ class MasterOrchestrator:
                 str(self.market_data.index[-1]),
                 last_price
             )
+
+        # Persist trade history log once at the end of backtest
+        try:
+            import json
+            with open("trade_history_log.json", "w", encoding="utf-8") as f:
+                json.dump(self.analysis_history, f, indent=2, default=str)
+        except Exception as e:
+            logger.error(f"Failed to persist trade_history_log.json at end of backtest: {e}")
 
         report = self.backtester.get_report()
         logger.info(report)

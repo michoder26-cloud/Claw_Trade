@@ -1,0 +1,156 @@
+{
+  "baseline": {
+    "label": "Constant Risk (6% Constant)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 77259.0,
+    "net_profit": 27259.0,
+    "return_pct": 54.518,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 4.452691576947435,
+    "max_drawdown": -10975.0,
+    "max_drawdown_pct": -21.95,
+    "jan_trades": [
+      {
+        "entry_time": "2026-01-13 16:00:00",
+        "exit_time": "2026-01-13 16:00:00",
+        "signal": "BUY",
+        "entry_price": 4629.75,
+        "exit_price": 4614.75,
+        "position_size": 0.4,
+        "profit_loss": -600.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-14 04:00:00",
+        "exit_time": "2026-01-15 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4620.51,
+        "exit_price": 4595.51,
+        "position_size": 0.23,
+        "profit_loss": -575.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-15 17:00:00",
+        "exit_time": "2026-01-16 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4615.36,
+        "exit_price": 4600.36,
+        "position_size": 0.35,
+        "profit_loss": -525.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-20 07:00:00",
+        "exit_time": "2026-01-20 07:00:00",
+        "signal": "BUY",
+        "entry_price": 4714.47,
+        "exit_price": 4699.47,
+        "position_size": 0.33,
+        "profit_loss": -495.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-22 12:00:00",
+        "exit_time": "2026-01-23 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4828.88,
+        "exit_price": 4903.88,
+        "position_size": 0.19,
+        "profit_loss": 1425.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-27 12:00:00",
+        "exit_time": "2026-01-27 12:00:00",
+        "signal": "BUY",
+        "entry_price": 5086.23,
+        "exit_price": 5092.23,
+        "position_size": 0.22,
+        "profit_loss": 132.0,
+        "status": "CLOSED"
+      }
+    ]
+  },
+  "dynamic": {
+    "label": "Dynamic Risk (Jan: 25% | Feb+: 6%)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 71378.0,
+    "net_profit": 21378.0,
+    "return_pct": 42.756,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 2.8040506329113923,
+    "max_drawdown": -34200.0,
+    "max_drawdown_pct": -68.4,
+    "jan_trades": [
+      {
+        "entry_time": "2026-01-13 16:00:00",
+        "exit_time": "2026-01-13 16:00:00",
+        "signal": "BUY",
+        "entry_price": 4629.75,
+        "exit_price": 4614.75,
+        "position_size": 1.67,
+        "profit_loss": -2504.9999999999995,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-14 04:00:00",
+        "exit_time": "2026-01-15 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4620.51,
+        "exit_price": 4595.51,
+        "position_size": 0.75,
+        "profit_loss": -1875.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-15 17:00:00",
+        "exit_time": "2026-01-16 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4615.36,
+        "exit_price": 4600.36,
+        "position_size": 0.94,
+        "profit_loss": -1410.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-20 07:00:00",
+        "exit_time": "2026-01-20 07:00:00",
+        "signal": "BUY",
+        "entry_price": 4714.47,
+        "exit_price": 4699.47,
+        "position_size": 0.7,
+        "profit_loss": -1050.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-22 12:00:00",
+        "exit_time": "2026-01-23 04:00:00",
+        "signal": "BUY",
+        "entry_price": 4828.88,
+        "exit_price": 4903.88,
+        "position_size": 0.32,
+        "profit_loss": 2400.0,
+        "status": "CLOSED"
+      },
+      {
+        "entry_time": "2026-01-27 12:00:00",
+        "exit_time": "2026-01-27 12:00:00",
+        "signal": "BUY",
+        "entry_price": 5086.23,
+        "exit_price": 5092.23,
+        "position_size": 0.56,
+        "profit_loss": 336.00000000000006,
+        "status": "CLOSED"
+      }
+    ]
+  }
+}

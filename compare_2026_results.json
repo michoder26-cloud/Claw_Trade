@@ -1,0 +1,32 @@
+[
+  {
+    "label": "Constant Risk (6% Constant)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 79113.0,
+    "net_profit": 29113.0,
+    "return_pct": 58.226,
+    "total_trades": 35,
+    "win_rate": 80.0,
+    "winning_trades": 28,
+    "losing_trades": 7,
+    "profit_factor": 4.68752374920836,
+    "max_drawdown": -10975.0,
+    "max_drawdown_pct": -21.95
+  },
+  {
+    "label": "Dynamic Risk (Jan: 25% | Feb+: 6%)",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 73094.0,
+    "net_profit": 23094.0,
+    "return_pct": 46.188,
+    "total_trades": 35,
+    "win_rate": 80.0,
+    "winning_trades": 28,
+    "losing_trades": 7,
+    "profit_factor": 2.948860759493671,
+    "max_drawdown": -34200.0,
+    "max_drawdown_pct": -68.4
+  }
+]

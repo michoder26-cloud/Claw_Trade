@@ -1,0 +1,143 @@
+{
+  "baseline": {
+    "label": 6.0,
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 77259.0,
+    "net_profit": 27259.0,
+    "return_pct": 54.518,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 4.452691576947435,
+    "max_drawdown": -10975.0,
+    "max_drawdown_pct": -21.95,
+    "monthly_breakdown": {
+      "2026-01": {
+        "trades": 6,
+        "wins": 2,
+        "losses": 4,
+        "pnl": -638.0
+      },
+      "2026-02": {
+        "trades": 6,
+        "wins": 5,
+        "losses": 1,
+        "pnl": 834.0
+      },
+      "2026-03": {
+        "trades": 4,
+        "wins": 3,
+        "losses": 1,
+        "pnl": -2.9999999999997726
+      },
+      "2026-04": {
+        "trades": 10,
+        "wins": 9,
+        "losses": 1,
+        "pnl": 13710.0
+      },
+      "2026-05": {
+        "trades": 8,
+        "wins": 8,
+        "losses": 0,
+        "pnl": 13356.0
+      }
+    }
+  },
+  "dynamic": {
+    "label": "dynamic",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 71378.0,
+    "net_profit": 21378.0,
+    "return_pct": 42.756,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 2.8040506329113923,
+    "max_drawdown": -34200.0,
+    "max_drawdown_pct": -68.4,
+    "monthly_breakdown": {
+      "2026-01": {
+        "trades": 6,
+        "wins": 2,
+        "losses": 4,
+        "pnl": -4104.0
+      },
+      "2026-02": {
+        "trades": 6,
+        "wins": 5,
+        "losses": 1,
+        "pnl": 681.0000000000002
+      },
+      "2026-03": {
+        "trades": 4,
+        "wins": 3,
+        "losses": 1,
+        "pnl": 0.0
+      },
+      "2026-04": {
+        "trades": 10,
+        "wins": 9,
+        "losses": 1,
+        "pnl": 12459.0
+      },
+      "2026-05": {
+        "trades": 8,
+        "wins": 8,
+        "losses": 0,
+        "pnl": 12342.0
+      }
+    }
+  },
+  "stepdown": {
+    "label": "stepdown",
+    "initial_balance": 10000.0,
+    "total_deposited": 50000.0,
+    "final_balance": 84746.0,
+    "net_profit": 34746.0,
+    "return_pct": 69.492,
+    "total_trades": 34,
+    "win_rate": 79.41176470588235,
+    "winning_trades": 27,
+    "losing_trades": 7,
+    "profit_factor": 2.7628614916286147,
+    "max_drawdown": -34200.0,
+    "max_drawdown_pct": -68.4,
+    "monthly_breakdown": {
+      "2026-01": {
+        "trades": 6,
+        "wins": 2,
+        "losses": 4,
+        "pnl": -4104.0
+      },
+      "2026-02": {
+        "trades": 6,
+        "wins": 5,
+        "losses": 1,
+        "pnl": 1959.0
+      },
+      "2026-03": {
+        "trades": 4,
+        "wins": 3,
+        "losses": 1,
+        "pnl": -296.9999999999998
+      },
+      "2026-04": {
+        "trades": 10,
+        "wins": 9,
+        "losses": 1,
+        "pnl": 22548.0
+      },
+      "2026-05": {
+        "trades": 8,
+        "wins": 8,
+        "losses": 0,
+        "pnl": 14640.0
+      }
+    }
+  }
+}

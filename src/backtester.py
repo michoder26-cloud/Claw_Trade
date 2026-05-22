@@ -28,6 +28,11 @@ class Trade:
     trailed: bool = False
     trailing_trigger: float = 0.0
     trailing_lock: float = 0.0
+    # Multi-Phase Trailing Stop fields
+    trail_phase: str = "INITIAL"  # INITIAL, BREAKEVEN, LOCKED, TRAILING
+    trail_highest: float = 0.0  # Highest price reached (for BUY trades)
+    trail_lowest: float = 999999.0  # Lowest price reached (for SELL trades)
+    original_sl_distance: float = 0.0  # Original SL distance for phase calculations
 
     def close(self, exit_price: float, exit_time: str, contract_size: float = 100.0):
         """Close the trade"""
@@ -84,7 +89,7 @@ class Backtester:
     def execute_trade(self, timestamp: str, price: float, signal: str,
                      position_size: float, stop_loss: float,
                      take_profit: float, trailing_trigger: float = 0.0,
-                     trailing_lock: float = 0.0) -> bool:
+                     trailing_lock: float = 0.0, original_sl_distance: float = 0.0) -> bool:
         """
         Execute a trade signal
 
@@ -113,7 +118,8 @@ class Backtester:
             stop_loss=stop_loss,
             take_profit=take_profit,
             trailing_trigger=trailing_trigger,
-            trailing_lock=trailing_lock
+            trailing_lock=trailing_lock,
+            original_sl_distance=original_sl_distance
         )
 
         self.open_positions.append(trade)
@@ -122,34 +128,117 @@ class Backtester:
         return True
 
     def check_stop_levels(self, timestamp: str, current_price: float, high_price: float, low_price: float):
-        """Check if any open positions hit stop-loss or take-profit levels"""
+        """Check if any open positions hit stop-loss or take-profit levels.
+        Implements 3-phase progressive trailing stop:
+        Phase 1 (BREAKEVEN): When profit >= 1.0x SL distance -> move SL to entry +/- 2
+        Phase 2 (LOCKED): When profit >= 2.0x SL distance -> move SL to lock 50% of profit  
+        Phase 3 (TRAILING): Progressive trail every TRAIL_STEP points
+        """
         use_trailing = os.getenv("USE_TRAILING_STOP", "false").lower() == "true"
+        # Read phase config from environment (with defaults)
+        be_trigger_mult = float(os.getenv("TRAIL_BREAKEVEN_TRIGGER", 1.0))
+        lock_trigger_mult = float(os.getenv("TRAIL_LOCK_TRIGGER", 2.0))
+        trail_step = float(os.getenv("TRAIL_STEP", 10.0))
+
+        # Legacy fallback values
         trigger_dist = float(os.getenv("TRAILING_STOP_TRIGGER", 10.0))
         lock_profit = float(os.getenv("TRAILING_STOP_LOCK", 6.0))
 
         closed_positions = []
 
         for trade in self.open_positions:
-            # 1. Update Trailing Stop / Breakeven Logic FIRST
-            # Resolve trigger and lock values (prioritize trade-specific settings over env defaults)
+            # Skip checking stop levels for trades entered on this exact timestamp (prevent entry-exit collision)
+            if trade.entry_time == timestamp:
+                continue
+
+            # Determine if this trade uses trailing stop
             trade_use_trailing = use_trailing or (trade.trailing_trigger > 0.0)
-            trade_trigger = trade.trailing_trigger if trade.trailing_trigger > 0.0 else trigger_dist
-            trade_lock = trade.trailing_lock if trade.trailing_lock > 0.0 else lock_profit
 
-            if trade_use_trailing and not trade.trailed:
-                if trade.signal == "BUY" and (high_price - trade.entry_price) >= trade_trigger:
-                    trade.stop_loss = trade.entry_price + trade_lock
-                    trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: BUY SL moved to {trade.stop_loss:.2f} (Locked +${trade_lock})")
-                elif trade.signal == "SELL" and (trade.entry_price - low_price) >= trade_trigger:
-                    trade.stop_loss = trade.entry_price - trade_lock
-                    trade.trailed = True
-                    logger.info(f"   🛡️ [{timestamp}] Trailing Stop Active: SELL SL moved to {trade.stop_loss:.2f} (Locked +${trade_lock})")
+            # --- Multi-Phase Trailing Stop Logic ---
+            if trade_use_trailing and trade.original_sl_distance > 0:
+                sl_dist = trade.original_sl_distance
+                be_threshold = sl_dist * be_trigger_mult
+                lock_threshold = sl_dist * lock_trigger_mult
 
+                if trade.signal == "BUY":
+                    # Track highest price
+                    if high_price > trade.trail_highest:
+                        trade.trail_highest = high_price
+                    unrealized = trade.trail_highest - trade.entry_price
+
+                    # Phase 3: TRAILING (progressive trail)
+                    if trade.trail_phase in ["LOCKED", "TRAILING"] and unrealized >= lock_threshold:
+                        trail_sl = trade.entry_price + (unrealized - trail_step)
+                        # Only move SL up, never down
+                        if trail_sl > trade.stop_loss:
+                            trade.stop_loss = trail_sl
+                            trade.trail_phase = "TRAILING"
+
+                    # Phase 2: LOCK 50% profit
+                    if trade.trail_phase in ["BREAKEVEN", "INITIAL"] and unrealized >= lock_threshold:
+                        new_sl = trade.entry_price + (unrealized * 0.5)
+                        if new_sl > trade.stop_loss:
+                            trade.stop_loss = new_sl
+                            trade.trail_phase = "LOCKED"
+                            trade.trailed = True
+                            logger.info(f"   [PHASE 2 LOCK] [{timestamp}] BUY SL -> {trade.stop_loss:.2f} (locked 50% of +{unrealized:.1f})")
+
+                    # Phase 1: BREAKEVEN
+                    if trade.trail_phase == "INITIAL" and unrealized >= be_threshold:
+                        new_sl = trade.entry_price + 2.0  # BE + $2 safety
+                        if new_sl > trade.stop_loss:
+                            trade.stop_loss = new_sl
+                            trade.trail_phase = "BREAKEVEN"
+                            trade.trailed = True
+                            logger.info(f"   [PHASE 1 BE] [{timestamp}] BUY SL -> {trade.stop_loss:.2f} (breakeven at +{unrealized:.1f})")
+
+                elif trade.signal == "SELL":
+                    # Track lowest price
+                    if low_price < trade.trail_lowest:
+                        trade.trail_lowest = low_price
+                    unrealized = trade.entry_price - trade.trail_lowest
+
+                    # Phase 3: TRAILING
+                    if trade.trail_phase in ["LOCKED", "TRAILING"] and unrealized >= lock_threshold:
+                        trail_sl = trade.entry_price - (unrealized - trail_step)
+                        if trail_sl < trade.stop_loss:
+                            trade.stop_loss = trail_sl
+                            trade.trail_phase = "TRAILING"
+
+                    # Phase 2: LOCK 50%
+                    if trade.trail_phase in ["BREAKEVEN", "INITIAL"] and unrealized >= lock_threshold:
+                        new_sl = trade.entry_price - (unrealized * 0.5)
+                        if new_sl < trade.stop_loss:
+                            trade.stop_loss = new_sl
+                            trade.trail_phase = "LOCKED"
+                            trade.trailed = True
+                            logger.info(f"   [PHASE 2 LOCK] [{timestamp}] SELL SL -> {trade.stop_loss:.2f} (locked 50% of +{unrealized:.1f})")
+
+                    # Phase 1: BREAKEVEN
+                    if trade.trail_phase == "INITIAL" and unrealized >= be_threshold:
+                        new_sl = trade.entry_price - 2.0
+                        if new_sl < trade.stop_loss:
+                            trade.stop_loss = new_sl
+                            trade.trail_phase = "BREAKEVEN"
+                            trade.trailed = True
+                            logger.info(f"   [PHASE 1 BE] [{timestamp}] SELL SL -> {trade.stop_loss:.2f} (breakeven at +{unrealized:.1f})")
+
+            # --- Legacy single-phase fallback (when original_sl_distance is 0) ---
+            elif trade_use_trailing and trade.original_sl_distance == 0:
+                trade_trigger = trade.trailing_trigger if trade.trailing_trigger > 0.0 else trigger_dist
+                trade_lock = trade.trailing_lock if trade.trailing_lock > 0.0 else lock_profit
+                if not trade.trailed:
+                    if trade.signal == "BUY" and (high_price - trade.entry_price) >= trade_trigger:
+                        trade.stop_loss = trade.entry_price + trade_lock
+                        trade.trailed = True
+                    elif trade.signal == "SELL" and (trade.entry_price - low_price) >= trade_trigger:
+                        trade.stop_loss = trade.entry_price - trade_lock
+                        trade.trailed = True
+
+            # --- Check SL/TP hits ---
             exit_price = None
             exit_reason = None
 
-            # 2. Check if open positions hit stop-loss or take-profit levels using the UPDATED stop_loss
             if trade.signal == "BUY":
                 if low_price <= trade.stop_loss:
                     exit_price = trade.stop_loss
@@ -157,7 +246,6 @@ class Backtester:
                 elif high_price >= trade.take_profit:
                     exit_price = trade.take_profit
                     exit_reason = "TAKE_PROFIT"
-
             elif trade.signal == "SELL":
                 if high_price >= trade.stop_loss:
                     exit_price = trade.stop_loss
@@ -171,7 +259,7 @@ class Backtester:
                 self.current_balance += trade.profit_loss
                 closed_positions.append(trade)
                 self.trades.append(trade)
-                logger.info(f"[{timestamp}] {exit_reason}: {trade.signal} closed @ {exit_price:.2f} | P&L: {trade.profit_loss:.2f}")
+                logger.info(f"[{timestamp}] {exit_reason}: {trade.signal} closed @ {exit_price:.2f} | P&L: {trade.profit_loss:.2f} | Phase: {trade.trail_phase}")
 
         # Remove closed positions
         for trade in closed_positions:
