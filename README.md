@@ -1,6 +1,28 @@
-# 🏆 XAU/USD Multi-Agent Trading System
+# 🏆 XAU/USD MMTC v2.0: The Holy Grail Strategy
 
-A sophisticated **multi-agent trading system** for gold (XAU/USD) analysis using Claude AI agents that analyze news, technical indicators, and risk management to generate trading signals with consensus decision-making.
+A sophisticated **multi-agent AI trading system** for Gold (XAU/USD). Codenamed **MMTC v2.0 (Market Maker Trap Catcher)**, this system combines Institutional Smart Money Concepts (SMC), dynamic Fibonacci Circles, and ruthless Risk Management to hunt for high-probability sniper entries.
+
+---
+
+## 🔥 The Holy Grail Strategy (SMC + Fibo Circles)
+The core of MMTC v2.0 is built on identifying where retail traders lose and where Market Makers (Institutions) enter.
+
+### 📐 Structural Mapping
+1. **Dynamic CHoCH / BOS Detection:** The bot uses a 5-bar fractal algorithm to identify valid Swing Highs and Swing Lows, dynamically mapping Market Structure.
+2. **Left-to-Right Wick Anchoring:** Fibonacci Retracements and Circles are drawn precisely from the origin swing to the completion swing, capturing 100% of the liquidity wicks.
+
+### 🎯 The 3 Institutional Zones (Price Tiers)
+*   **Tier 1: Equilibrium Zone (`23.6% - 38.2%`)** - Trend continuation. Triggers if MACD quickly confirms the pullback.
+*   **Tier 2: Fair Value Pool (`50.0% - 61.8%`)** - The primary Day Trading zone. Discount for buyers, Premium for sellers.
+*   **Tier 3: Market Maker All-In Zone (`78.6% - 88.7%`)** - The ultimate liquidity sweep zone. This is the final defense level before a CHoCH invalidates the trend.
+
+### 💥 God Mode: Lot x3 Override
+When the price enters the **Tier 3 (78.6% - 88.7%)** zone and momentum (RSI) confirms exhaustion:
+1. **Aggressive Sizing:** The bot multiplies its normal lot size by **3x** (Risking 18% instead of 6%).
+2. **Tight Stop Loss:** SL is compressed to a razor-thin 3.0 USD distance (just beyond the 100% Fibo invalidation line).
+3. **1:10 Risk-Reward:** Targeting massive extensions (161.8%), a single winning trade in this zone can grow the portfolio by **180%**.
+
+---
 
 ## 🏗️ Architecture
 
@@ -13,51 +35,49 @@ A sophisticated **multi-agent trading system** for gold (XAU/USD) analysis using
          ┌───────────┼───────────┬───────────┐
          ▼           ▼           ▼           ▼
     ┌────────┐  ┌────────┐ ┌────────┐ ┌──────────┐
-    │ News   │  │Technical│ Risk    │ Consensus│
-    │Analyst │  │Analyst  │ Manager │ Engine   │
+    │ News   │  │ Bull   │ │ Bear   │ │ CEO      │
+    │ Analyst│  │ Agent  │ │ Agent  │ │ Agent    │
     └────────┘  └────────┘ └────────┘ └──────────┘
          │           │           │           │
          └───────────┼───────────┴───────────┘
                      │
               ┌──────▼──────┐
               │ Backtester  │
-              │ (Execute)   │
+              │ (MT5 Live)  │
               └─────────────┘
 ```
 
 ## 📋 Agents & Responsibilities
 
 ### 1. 📰 **News Analyst**
-- Analyzes fundamental factors affecting XAU/USD
-- Monitors geopolitical events, Fed policy, inflation
-- Outputs: BUY/SELL/HOLD signal + Confidence score
+- Parses ForexFactory macroeconomic data (NFP, CPI, FOMC).
+- Enforces "News Blackouts" to prevent trading during extreme volatility.
 
-### 2. 📊 **Technical Analyst**
-- Analyzes price action and technical indicators:
-  - RSI (Relative Strength Index)
-  - MACD (Moving Average Convergence Divergence)
-  - Bollinger Bands
-  - ATR (Average True Range)
-- Identifies support/resistance levels
-- Outputs: BUY/SELL/HOLD + Entry/Exit levels
+### 2. 🐂 **Bull Agent (The Prosecutor for Longs)**
+- Searches exclusively for bullish SMC setups (FVG, Order Blocks, Liquidity Sweeps).
+- Activates Setup E (Fibo Circle Support) to call for Lot x3 Longs.
 
-### 3. ⚖️ **Risk Manager**
-- Calculates position sizing (Kelly Criterion, Fixed %)
-- Determines stop-loss and take-profit levels
-- Monitors portfolio risk and drawdown
-- Outputs: Position size, SL/TP levels, Risk metrics
+### 3. 🐻 **Bear Agent (The Prosecutor for Shorts)**
+- Searches exclusively for bearish setups.
+- Activates Setup E (Fibo Circle Resistance) to call for Lot x3 Shorts.
 
-### 4. 🤝 **Consensus Engine**
-- Aggregates signals from all agents
-- Uses weighted voting system
-- Resolves disagreements
-- Outputs: Final signal + Confidence level
+### 4. 👔 **CEO Agent (The Ultimate Decision Maker)**
+- Listens to both Bull and Bear cases.
+- Requires a strict conviction score (>= 78%) to approve a trade.
+- Reads `[OVERRIDE_LOT_MULTIPLIER=3.0]` flags to authorize aggressive execution.
 
-### 5. 🎯 **Master Orchestrator**
-- Coordinates all agents
-- Manages trading execution
-- Logs analysis history
-- Exports results
+---
+
+## 🛡️ Advanced Risk & Trade Management
+
+*   **Sniper Engine (Golden Hours):** Only trades during London/New York overlap sessions to avoid Asian session fakeouts.
+*   **3-Phase Trailing Stop:** 
+    1. **Breakeven:** Once profit reaches $10, SL moves to entry.
+    2. **Lock 1:** At $15 profit, locks in $6.
+    3. **Lock 2:** At $25 profit, locks in $12.
+*   **ATR Dynamic SL:** During normal trades (Tier 1/2), SL distance expands/contracts based on current market volatility.
+
+---
 
 ## 🚀 Quick Start
 
@@ -69,154 +89,22 @@ pip install -r requirements.txt
 ### Setup Environment
 ```bash
 cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY
+# Edit .env with your OPENROUTER_API_KEY
 ```
 
 ### Run Backtest
 ```bash
-python main.py backtest --start-date 2023-01-01 --end-date 2024-12-31 --sample-rate 24
+python check_24_25_trailing_stop.py
 ```
 
-### Check Configuration
+### Run MT5 Live Execution
 ```bash
-python main.py config
+python main.py live
 ```
-
-## 📁 Project Structure
-
-```
-xau_trading_system/
-├── config.py              # Configuration management
-├── data_handler.py        # Data fetching & preprocessing
-├── agents.py              # Individual AI agents
-├── backtester.py          # Backtesting engine
-├── orchestrator.py        # Master orchestrator
-├── main.py                # CLI entry point
-├── requirements.txt       # Dependencies
-├── .env.example           # Environment template
-└── README.md              # This file
-```
-
-## ⚙️ Configuration
-
-Edit `.env` or modify `config.py`:
-
-```env
-# Trading Parameters
-INITIAL_BALANCE=10000                 # Starting capital ($)
-POSITION_SIZE_PERCENT=2               # Risk per trade (%)
-MAX_DAILY_TRADES=3                    # Max trades per day
-MAX_OPEN_POSITIONS=2                  # Concurrent positions
-MAX_DRAWDOWN_PERCENT=10               # Portfolio drawdown limit (%)
-RISK_REWARD_RATIO=1.5                 # Required RR ratio
-
-# Backtesting
-BACKTESTING_START_DATE=2023-01-01
-BACKTESTING_END_DATE=2024-12-31
-
-# API
-ANTHROPIC_API_KEY=sk-...
-```
-
-## 📊 Output & Results
-
-### Backtesting Report
-```
-==============================================================
-📊 BACKTESTING REPORT
-==============================================================
-Initial Balance: $10,000.00
-Final Balance: $12,450.50
-Net Profit/Loss: $2,450.50 (24.51%)
-
-TRADE STATISTICS:
-Total Trades: 45
-  - Buy Trades: 23
-  - Sell Trades: 22
-Winning Trades: 28
-Losing Trades: 17
-Win Rate: 62.22%
-Profit Factor: 1.85
-
-PERFORMANCE METRICS:
-Gross Profit: $3,200.00
-Gross Loss: $1,750.00
-Average P&L per Trade: $54.46
-Max Drawdown: -$1,200.00 (-12%)
-Sharpe Ratio: 1.45
-==============================================================
-```
-
-### Analysis Results (JSON)
-Detailed analysis records saved to `backtest_results.json`:
-- Timestamp & price
-- Agent signals & confidence
-- Risk calculations
-- Trade execution details
-
-## 🔄 Agent Workflow
-
-1. **Data Preparation**: Load OHLCV data + calculate indicators
-2. **Technical Analysis**: Evaluate technical signals
-3. **News/Fundamental**: Assess market sentiment
-4. **Risk Calculation**: Determine position size & levels
-5. **Consensus**: Combine all signals
-6. **Execution**: Execute trade or skip (HOLD)
-7. **Monitoring**: Track open positions
-8. **Exit Management**: Check SL/TP levels
-
-## 🧪 Backtesting Features
-
-✅ Historical data from Yahoo Finance  
-✅ OHLC candle analysis  
-✅ Multiple indicator calculations  
-✅ Position sizing based on Kelly Criterion  
-✅ Stop-loss and take-profit tracking  
-✅ Trade statistics (win rate, profit factor, Sharpe ratio)  
-✅ Drawdown analysis  
-✅ Equity curve tracking  
-
-## 📈 Performance Metrics
-
-- **Win Rate**: % of profitable trades
-- **Profit Factor**: Gross Profit / Gross Loss
-- **Sharpe Ratio**: Risk-adjusted returns
-- **Max Drawdown**: Largest peak-to-trough decline
-- **Return %**: Total profit / Initial balance
-
-## 🔐 Risk Management
-
-- Position sizing follows Kelly Criterion
-- Maximum risk per trade: 2% (configurable)
-- Stop-loss and take-profit automation
-- Portfolio heat monitoring
-- Max drawdown enforcement
-- Multiple position limit
-
-## 🚀 Future Enhancements
-
-- [ ] Real-time data feed integration
-- [ ] Live broker API integration (Oanda, IG)
-- [ ] Machine learning model integration
-- [ ] Advanced risk analytics
-- [ ] Telegram/Discord notifications
-- [ ] Advanced pattern recognition
-- [ ] Multi-timeframe analysis
-
-## ⚠️ Important Notes
-
-**Disclaimer**: This system is for educational and research purposes. Past performance does not guarantee future results. Always conduct proper risk management and never trade with money you can't afford to lose.
-
-## 📞 Support
-
-- 🐛 Issues: Check logs in `trading_system.log`
-- 📚 Documentation: See inline code comments
-- 💡 Ideas: Contribute improvements!
-
-## 📄 License
-
-Educational Use Only
 
 ---
 
-**Created with ❤️ using Claude AI**
+## ⚠️ Important Notes
+**Disclaimer**: This is a highly aggressive, institutional-grade mathematical algorithm utilizing compounding risk. The "Lot x3 Override" carries extreme risk per trade. Use on a Cent Account first. Past performance does not guarantee future results.
+
+**Created for elite XAU/USD trading.**
