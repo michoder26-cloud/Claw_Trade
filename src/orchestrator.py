@@ -530,6 +530,14 @@ class MasterOrchestrator:
 
         # Validate minimum decision confidence (78% threshold for SMC setups)
         if decision in ["BUY", "SELL"] and confidence >= 0.78:
+            # Determine precise execution price for SL/TP calculations (Ask for BUY, Bid for SELL in live trading)
+            execution_price = row['close']
+            if self.mode == "LIVE":
+                prices = self.mt5_connector.get_price()
+                if prices:
+                    execution_price = prices["ask"] if decision == "BUY" else prices["bid"]
+                    logger.info(f"   🎯 LIVE MODE: Using live execution price ${execution_price:.2f} (Ask/Bid) instead of candle close ${row['close']:.2f}")
+
             # ATR-Based Dynamic SL (Anti-SL Hunt Upgrade)
             rr = getattr(self.config, "RISK_REWARD_RATIO", 2.0)
             atr_period = getattr(self.config, "ATR_PERIOD", 5)
@@ -556,29 +564,29 @@ class MasterOrchestrator:
                 # Adjust SL to sit behind structure level
                 if decision == "BUY":
                     structure_sl = local_support - 2.0  # 2 USD below key support
-                    raw_sl = row['close'] - sl_distance
-                    sl_price = min(raw_sl, structure_sl) if structure_sl < row['close'] else raw_sl
-                    sl_distance = row['close'] - sl_price  # Recalculate actual SL distance
+                    raw_sl = execution_price - sl_distance
+                    sl_price = min(raw_sl, structure_sl) if structure_sl < execution_price else raw_sl
+                    sl_distance = execution_price - sl_price  # Recalculate actual SL distance
                     tp_distance = sl_distance * rr
-                    tp_price = row['close'] + tp_distance
+                    tp_price = execution_price + tp_distance
                 else:
                     structure_sl = local_resistance + 2.0  # 2 USD above key resistance
-                    raw_sl = row['close'] + sl_distance
-                    sl_price = max(raw_sl, structure_sl) if structure_sl > row['close'] else raw_sl
-                    sl_distance = sl_price - row['close']
+                    raw_sl = execution_price + sl_distance
+                    sl_price = max(raw_sl, structure_sl) if structure_sl > execution_price else raw_sl
+                    sl_distance = sl_price - execution_price
                     tp_distance = sl_distance * rr
-                    tp_price = row['close'] - tp_distance
+                    tp_price = execution_price - tp_distance
 
                 logger.info(f"   🎯 ATR-SL [ATR({atr_period})={atr_value:.2f}]: SL={sl_distance:.2f} / TP={tp_distance:.2f} (1:{rr} R:R)")
             else:
                 sl_distance = getattr(self.config, "FIXED_SL_USD", 10.0)
                 tp_distance = sl_distance * rr
                 if decision == "BUY":
-                    sl_price = row['close'] - sl_distance
-                    tp_price = row['close'] + tp_distance
+                    sl_price = execution_price - sl_distance
+                    tp_price = execution_price + tp_distance
                 else:
-                    sl_price = row['close'] + sl_distance
-                    tp_price = row['close'] - tp_distance
+                    sl_price = execution_price + sl_distance
+                    tp_price = execution_price - tp_distance
                 logger.info(f"   🎯 FIXED-SL: SL={sl_distance:.2f} / TP={tp_distance:.2f} (1:{rr} R:R)")
 
             # Check for specific SMC / Fibo Circle Overrides
@@ -589,11 +597,11 @@ class MasterOrchestrator:
                 # Override SL to a very tight invalidation (e.g., 3.0 USD)
                 sl_distance = 3.0
                 if decision == "BUY":
-                    sl_price = row['close'] - sl_distance
-                    tp_price = row['close'] + (sl_distance * 10) # 1:10 RR for All-In Zones
+                    sl_price = execution_price - sl_distance
+                    tp_price = execution_price + (sl_distance * 10) # 1:10 RR for All-In Zones
                 else:
-                    sl_price = row['close'] + sl_distance
-                    tp_price = row['close'] - (sl_distance * 10)
+                    sl_price = execution_price + sl_distance
+                    tp_price = execution_price - (sl_distance * 10)
                 logger.info(f"   🔪 TIGHT SL OVERRIDE: SL={sl_distance:.2f} / TP={(sl_distance * 10):.2f} (1:10 R:R)")
 
             # Dynamic Risk-Based Position Sizing (Money Management)
@@ -953,6 +961,131 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
 
             # Check if still open in MT5
             if self.mt5_connector.is_position_open(ticket):
+                # --- LIVE TRAILING STOP LOGIC ---
+                use_trailing = os.getenv("USE_TRAILING_STOP", "false").lower() == "true"
+                if use_trailing:
+                    prices = self.mt5_connector.get_price()
+                    if prices:
+                        entry_price = pos.get("entry_price")
+                        sl_price = pos.get("stop_loss")
+                        tp_price = pos.get("take_profit")
+                        signal = pos.get("signal")
+                        
+                        # Initialize tracking fields if not present
+                        if "trail_phase" not in pos:
+                            pos["trail_phase"] = "INITIAL"
+                        if "trail_highest" not in pos:
+                            pos["trail_highest"] = entry_price
+                        if "trail_lowest" not in pos:
+                            pos["trail_lowest"] = entry_price
+                        if "original_sl_distance" not in pos:
+                            pos["original_sl_distance"] = abs(entry_price - sl_price) if sl_price else 10.0
+
+                        sl_dist = pos["original_sl_distance"]
+                        if sl_dist <= 0:
+                            sl_dist = 10.0 # safety fallback
+
+                        be_trigger_mult = float(os.getenv("TRAIL_BREAKEVEN_TRIGGER", 1.0))
+                        lock_trigger_mult = float(os.getenv("TRAIL_LOCK_TRIGGER", 2.0))
+                        trail_step = float(os.getenv("TRAIL_STEP", 10.0))
+
+                        be_threshold = sl_dist * be_trigger_mult
+                        lock_threshold = sl_dist * lock_trigger_mult
+
+                        new_sl = sl_price
+                        modified = False
+
+                        if signal == "BUY":
+                            curr_price = prices["bid"]
+                            if curr_price > pos["trail_highest"]:
+                                pos["trail_highest"] = curr_price
+                                modified = True
+                            
+                            unrealized = pos["trail_highest"] - entry_price
+
+                            # Phase 3: TRAILING (progressive trail)
+                            if pos["trail_phase"] in ["LOCKED", "TRAILING"] and unrealized >= lock_threshold:
+                                trail_sl = entry_price + (unrealized - trail_step)
+                                if trail_sl > new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "TRAILING"
+                                    modified = True
+
+                            # Phase 2: LOCK 50%
+                            elif pos["trail_phase"] in ["BREAKEVEN", "INITIAL"] and unrealized >= lock_threshold:
+                                trail_sl = entry_price + (unrealized * 0.5)
+                                if trail_sl > new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "LOCKED"
+                                    modified = True
+                                    logger.info(f"🔥 [LIVE Phase 2 Lock] Ticket #{ticket} BUY SL -> {new_sl:.2f} (locked 50% of +{unrealized:.1f})")
+
+                            # Phase 1: BREAKEVEN
+                            elif pos["trail_phase"] == "INITIAL" and unrealized >= be_threshold:
+                                trail_sl = entry_price + 2.0
+                                if trail_sl > new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "BREAKEVEN"
+                                    modified = True
+                                    logger.info(f"🔥 [LIVE Phase 1 BE] Ticket #{ticket} BUY SL -> {new_sl:.2f} (breakeven at +{unrealized:.1f})")
+
+                        elif signal == "SELL":
+                            curr_price = prices["ask"]
+                            if curr_price < pos["trail_lowest"]:
+                                pos["trail_lowest"] = curr_price
+                                modified = True
+                            
+                            unrealized = entry_price - pos["trail_lowest"]
+
+                            # Phase 3: TRAILING (progressive trail)
+                            if pos["trail_phase"] in ["LOCKED", "TRAILING"] and unrealized >= lock_threshold:
+                                trail_sl = entry_price - (unrealized - trail_step)
+                                if trail_sl < new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "TRAILING"
+                                    modified = True
+
+                            # Phase 2: LOCK 50%
+                            elif pos["trail_phase"] in ["BREAKEVEN", "INITIAL"] and unrealized >= lock_threshold:
+                                trail_sl = entry_price - (unrealized * 0.5)
+                                if trail_sl < new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "LOCKED"
+                                    modified = True
+                                    logger.info(f"🔥 [LIVE Phase 2 Lock] Ticket #{ticket} SELL SL -> {new_sl:.2f} (locked 50% of +{unrealized:.1f})")
+
+                            # Phase 1: BREAKEVEN
+                            elif pos["trail_phase"] == "INITIAL" and unrealized >= be_threshold:
+                                trail_sl = entry_price - 2.0
+                                if trail_sl < new_sl:
+                                    new_sl = trail_sl
+                                    pos["trail_phase"] = "BREAKEVEN"
+                                    modified = True
+                                    logger.info(f"🔥 [LIVE Phase 1 BE] Ticket #{ticket} SELL SL -> {new_sl:.2f} (breakeven at +{unrealized:.1f})")
+
+                        # If the target SL has changed, modify the position in MT5
+                        if new_sl != sl_price:
+                            success = self.mt5_connector.modify_position_sl_tp(ticket, new_sl, tp_price)
+                            if success:
+                                pos["stop_loss"] = new_sl
+                                modified = True
+                                try:
+                                    self.discord_reporter.report_system_status(
+                                        title=f"🔄 TRAILING STOP: ปรับจุดตัดขาดทุน (Phase: {pos['trail_phase']})",
+                                        message=(
+                                            f"Ticket: **#{ticket}** | สัญลักษณ์: **XAU/USD**\n"
+                                            f"คำสั่ง: **{signal}** | ขนาด: **{pos['lot_size']:.2f} Lot**\n"
+                                            f"ราคาเปิด: **${entry_price:.2f}**\n"
+                                            f"ปรับ SL ใหม่: **${new_sl:.2f}**\n"
+                                            f"ราคาตลาดปัจจุบัน: **${curr_price:.2f}**"
+                                        ),
+                                        color=16776960
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send trailing stop Discord update: {e}")
+                            else:
+                                logger.error(f"Failed to modify SL on MT5 server for ticket #{ticket}")
+
                 still_open.append(pos)
                 continue
 

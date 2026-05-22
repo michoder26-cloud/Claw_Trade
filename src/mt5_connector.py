@@ -201,6 +201,43 @@ class MT5Connector:
 
         return closed_count
 
+    def modify_position_sl_tp(self, ticket: int, stop_loss: float, take_profit: float) -> bool:
+        """Modify stop loss and take profit for an open position on MT5"""
+        if not self.connect() or mt5 is None:
+            return False
+
+        # Fetch position details to verify it exists and get its symbol
+        position = mt5.positions_get(ticket=ticket)
+        if position is None or len(position) == 0:
+            logger.error(f"Position ticket #{ticket} not found on MT5 server.")
+            return False
+
+        pos = position[0]
+        symbol = pos.symbol
+
+        # Prepare modification request
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": symbol,
+            "position": ticket,
+            "sl": float(stop_loss),
+            "tp": float(take_profit),
+        }
+
+        logger.info(f"Modifying position #{ticket} on MT5 (SL: {pos.sl:.2f} -> {stop_loss:.2f}, TP: {pos.tp:.2f} -> {take_profit:.2f})...")
+        result = mt5.order_send(request)
+
+        if result is None:
+            logger.error(f"MT5 position modification failed entirely. Error: {mt5.last_error()}")
+            return False
+
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            logger.error(f"MT5 position modification rejected. Retcode: {result.retcode}. Comment: {result.comment}")
+            return False
+
+        logger.info(f"✅ MT5 Position #{ticket} modified successfully!")
+        return True
+
     def is_position_open(self, ticket: int) -> bool:
         """Check if a specific position ticket is still active in MT5"""
         if not self.connect() or mt5 is None:

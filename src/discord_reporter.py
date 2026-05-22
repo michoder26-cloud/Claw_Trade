@@ -7,6 +7,7 @@ Sends formatted trade reports to Discord via webhook every time:
 import os
 import json
 import logging
+import time
 import requests
 from datetime import datetime
 from typing import Dict, Optional, Any
@@ -23,27 +24,54 @@ class DiscordReporter:
         if not self.webhook_url:
             logger.warning("⚠️ DISCORD_TRADE_WEBHOOK_URL not set. Discord reports will be skipped.")
 
+    def _send_to_url(self, url: str, payload: Dict) -> bool:
+        """Send a payload to a specific webhook URL with retries for transient errors"""
+        if not url:
+            return False
+
+        max_retries = 5
+        backoff = 2.0
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(
+                    url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=10
+                )
+                if resp.status_code in [200, 204]:
+                    logger.info("✅ Discord report sent successfully!")
+                    return True
+                elif resp.status_code == 429:
+                    try:
+                        retry_after = float(resp.headers.get("Retry-After", backoff))
+                    except:
+                        retry_after = backoff
+                    logger.warning(f"⚠️ Discord rate limited (429). Retrying after {retry_after} seconds...")
+                    time.sleep(retry_after)
+                else:
+                    logger.error(f"❌ Discord webhook error: {resp.status_code} {resp.text}")
+                    # 4xx errors (except 429) are usually client errors, no point retrying
+                    if 400 <= resp.status_code < 500:
+                        return False
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                logger.warning(f"⚠️ Discord connection attempt {attempt}/{max_retries} failed: {e}. Retrying in {backoff}s...")
+                time.sleep(backoff)
+                backoff *= 2.0
+            except Exception as e:
+                logger.error(f"❌ Unexpected Discord webhook exception: {e}")
+                return False
+
+        logger.error("❌ Failed to send Discord report after max retries.")
+        return False
+
     def _send(self, payload: Dict) -> bool:
         """Send a payload to Discord webhook"""
         if not self.webhook_url:
             logger.info("[Discord Reporter] No webhook URL configured. Skipping.")
             return False
-        try:
-            resp = requests.post(
-                self.webhook_url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=10
-            )
-            if resp.status_code in [200, 204]:
-                logger.info("✅ Discord report sent successfully!")
-                return True
-            else:
-                logger.error(f"❌ Discord webhook error: {resp.status_code} {resp.text}")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Discord webhook exception: {e}")
-            return False
+        return self._send_to_url(self.webhook_url, payload)
 
     # ──────────────────────────────────────────────
     # 1. REPORT: ORDER OPENED
@@ -253,14 +281,4 @@ class DiscordReporter:
                 }
             ]
         }
-        try:
-            resp = requests.post(target_url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
-            if resp.status_code in [200, 204]:
-                logger.info("✅ Breaking news report sent successfully!")
-                return True
-            else:
-                logger.error(f"❌ Breaking news webhook error: {resp.status_code} {resp.text}")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Breaking news webhook exception: {e}")
-            return False
+        return self._send_to_url(target_url, payload)
