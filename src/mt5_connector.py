@@ -238,6 +238,12 @@ class MT5Connector:
         logger.info(f"✅ MT5 Position #{ticket} modified successfully!")
         return True
 
+    def get_account_info(self):
+        """Fetch MT5 account information"""
+        if not self.connect() or mt5 is None:
+            return None
+        return mt5.account_info()
+
     def is_position_open(self, ticket: int) -> bool:
         """Check if a specific position ticket is still active in MT5"""
         if not self.connect() or mt5 is None:

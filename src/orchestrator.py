@@ -608,7 +608,11 @@ class MasterOrchestrator:
                 logger.info(f"   🔪 TIGHT SL OVERRIDE: SL={sl_distance:.2f} / TP={(sl_distance * 10):.2f} (1:10 R:R)")
 
             # Dynamic Risk-Based Position Sizing (Money Management)
-            balance = self.backtester.current_balance
+            if self.mode == "LIVE":
+                acc_info = self.mt5_connector.get_account_info()
+                balance = acc_info.balance if acc_info is not None else 10000.0
+            else:
+                balance = self.backtester.current_balance
             contract_size = 100.0  # Standard MT5 Gold Contract Size
             
             fixed_lot = getattr(self.config, "FIXED_LOT_SIZE", 1.0)
@@ -722,26 +726,28 @@ class MasterOrchestrator:
             analysis_record["trade_executed"] = False
 
         # Manage open backtest positions and capture feedback
-        closed_trades = self.backtester.check_stop_levels(
-            timestamp=str(timestamp),
-            current_price=row['close'],
-            high_price=row.get('high', row['close']),
-            low_price=row.get('low', row['close'])
-        )
-        
-        # 🧠 LEARNING: Update memory with trade results
-        if closed_trades:
-            for trade in closed_trades:
-                outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
-                pnl = trade.get("profit_loss", 0)
-                lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
-                if outcome == "LOSS":
-                    lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
-                else:
-                    lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
-                
-                self.learning_memory.append(lesson)
-                logger.info(f"   🧠 New Lesson Learned: {lesson}")
+        closed_trades = []
+        if self.mode != "LIVE":
+            closed_trades = self.backtester.check_stop_levels(
+                timestamp=str(timestamp),
+                current_price=row['close'],
+                high_price=row.get('high', row['close']),
+                low_price=row.get('low', row['close'])
+            )
+            
+            # 🧠 LEARNING: Update memory with trade results
+            if closed_trades:
+                for trade in closed_trades:
+                    outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
+                    pnl = trade.get("profit_loss", 0)
+                    lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
+                    if outcome == "LOSS":
+                        lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
+                    else:
+                        lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
+                    
+                    self.learning_memory.append(lesson)
+                    logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
         self.analysis_history.append(analysis_record)
         if self.mode == "LIVE":
