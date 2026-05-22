@@ -81,26 +81,60 @@ When the price enters the **Tier 3 (78.6% - 88.7%)** zone and momentum (RSI) con
 
 ## 🚀 Quick Start
 
-### Prerequisites
-```bash
-pip install -r requirements.txt
-```
+### 1. Prerequisites (สเปกและความต้องการของระบบ)
+- **ระบบปฏิบัติการ (OS)**: บอทนี้ใช้งานไลบรารี `MetaTrader5` สำหรับ Python ซึ่งจะ**รองรับเฉพาะบน Windows เท่านั้น**
+- **แอปพลิเคชัน MT5**: ต้องติดตั้งโปรแกรม **MetaTrader 5 Terminal** ลงบนเครื่อง Windows และล็อกอินเข้าบัญชีเทรด (เดโม หรือ พอร์ตจริง) ไว้เรียบร้อยแล้ว
+- **การตั้งค่าใน MT5**: 
+  1. ไปที่ `Tools -> Options -> Expert Advisors`
+  2. ติ๊กเลือก **"Allow Algo Trading"** (อนุญาตให้บอทส่งคำสั่งซื้อขาย) และ **"Allow DLL imports"**
+  3. เพิ่มสัญลักษณ์ทองคำ (เช่น `XAUUSD` หรือสัญลักษณ์ Gold ของโบรกเกอร์คุณ เช่น `GOLD`, `XAUUSD.m`) เข้ามาในหน้าต่าง **Market Watch** ใน MT5
+- **การติดตั้งแพ็กเกจ**:
+  ```bash
+  pip install -r requirements.txt
+  ```
 
-### Setup Environment
+### 2. Setup Environment (ตั้งค่าไฟล์ระบบ)
+ก๊อบปี้ไฟล์ตัวอย่างการตั้งค่าไปสร้างเป็นไฟล์ `.env`:
 ```bash
 cp .env.example .env
-# Edit .env with your OPENROUTER_API_KEY
 ```
+เปิดไฟล์ `.env` ขึ้นมาเพื่อกรอกข้อมูลที่จำเป็น:
+*   `OPENROUTER_API_KEY`: คีย์สำหรับเชื่อมต่อ AI ของ OpenRouter (ใช้ขับเคลื่อนการวิเคราะห์ตัดสินใจของ CEO, Bull, Bear และประเมินบทเรียนเทรด)
+*   `DISCORD_WEBHOOK_URL`: ลิงก์ Discord Webhook สำหรับรับการรายงานแบบเรียลไทม์ (แจ้งเตือนเปิดออเดอร์, ปิดออเดอร์, การลาก Trailing Stop, รายงานรายสัปดาห์)
+*   **การตั้งค่า MT5 (Live / Paper Trading เท่านั้น)**:
+    *   `MT5_LOGIN`: รหัสสมาชิกบัญชีเทรด MT5 (เช่น `106123714`) *หากเว้นไว้ บอทจะใช้บัญชีที่ล็อกอินอยู่ปัจจุบันในโปรแกรม MT5*
+    *   `MT5_PASSWORD`: รหัสผ่านบัญชี MT5
+    *   `MT5_SERVER`: ชื่อเซิร์ฟเวอร์โบรกเกอร์ (เช่น `FBSTradestone-Demo`)
+    *   `MT5_SYMBOL`: สัญลักษณ์ทองคำบนโบรกเกอร์ของคุณ (เช่น `XAUUSD` หรือ `GOLD`)
+*   **การตั้งค่า Trailing Stop**:
+    *   `USE_TRAILING_STOP`: ตั้งเป็น `true` เพื่อเปิดใช้ Trailing Stop แบบ 3 ระยะ
+    *   `TRAIL_BREAKEVEN_TRIGGER`: สัดส่วนการขยับ SL ไปหน้าทุน (ค่าเริ่มต้น: `1.0` เท่าของระยะ SL)
+    *   `TRAIL_LOCK_TRIGGER`: สัดส่วนการขยับ SL ไปล็อกกำไร 50% (ค่าเริ่มต้น: `2.0` เท่าของระยะ SL)
 
-### Run Backtest
+### 3. Running Commands (คำสั่งการใช้งาน)
+
+#### 🧪 3.1 การรัน Backtest (ทดสอบย้อนหลัง)
+คุณสามารถรันตัวทดสอบย้อนหลังเพื่อวิเคราะห์ประสิทธิภาพของบอทด้วยสถิติต่างๆ:
 ```bash
+# แบบรันการทดสอบเบื้องต้น (ใช้ไฟล์เช็ค Trailing Stop)
 python check_24_25_trailing_stop.py
+
+# หรือรันผ่าน main.py เพื่อกำหนดช่วงเวลาและสัญลักษณ์เอง:
+python main.py backtest --start-date 2026-01-01 --end-date 2026-05-01 --interval 1h --risk-pct 15.0
 ```
 
-### Run MT5 Live Execution
+#### 📄 3.2 การรัน Paper Trading (จำลองการเทรดสดบนบัญชี Demo)
+รันบอทวิเคราะห์ตลาดสดและจำลองการเทรดโดยใช้ยอดเงินและพอร์ตของ MT5 Demo Account:
 ```bash
-python main.py live
+python main.py paper --interval 60
 ```
+
+#### ⚠️ 3.3 การรัน Live Trading (เทรดจริงบนพอร์ตเงินจริง)
+รันบอทให้เข้าคุมพอร์ตและเปิดออเดอร์ส่งคำสั่งซื้อขายจริงด้วยเงินจริงบนบัญชีจริง:
+```bash
+python main.py live --confirm --interval 60
+```
+> **หมายเหตุความปลอดภัย**: การรันโหมด `live` จำเป็นต้องระบุแฟล็ก `--confirm` เสมอ เพื่อเป็นการยืนยันความเสี่ยงก่อนที่ระบบจะเริ่มทำงาน
 
 ---
 
