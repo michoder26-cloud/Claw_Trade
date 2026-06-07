@@ -68,8 +68,10 @@ class MasterOrchestrator:
         self.last_trade_date: Optional[str] = None
 
         self.open_positions: List[Dict] = []
+        self.last_trade_timestamp: Optional[str] = None
         if self.mode == "LIVE":
             self._load_live_positions()
+            self._load_live_state()
 
         logger.info(f"Hierarchical Orchestrator initialized in {mode} mode")
 
@@ -93,6 +95,35 @@ class MasterOrchestrator:
             logger.info(f"💾 Saved {len(self.open_positions)} active positions to live_positions.json")
         except Exception as e:
             logger.error(f"Failed to save live_positions.json: {e}")
+
+    def _load_live_state(self):
+        """Loads live state parameters from live_state.json to persist across restarts"""
+        try:
+            import json
+            if os.path.exists("live_state.json"):
+                with open("live_state.json", "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                    self.trades_today = state.get("trades_today", 0)
+                    self.last_trade_date = state.get("last_trade_date", None)
+                    self.last_trade_timestamp = state.get("last_trade_timestamp", None)
+                logger.info(f"💾 Loaded live state: trades_today={self.trades_today}, last_trade_date={self.last_trade_date}, last_trade_timestamp={self.last_trade_timestamp}")
+        except Exception as e:
+            logger.error(f"Failed to load live_state.json: {e}")
+
+    def _save_live_state(self):
+        """Saves current live state parameters to live_state.json"""
+        try:
+            import json
+            state = {
+                "trades_today": self.trades_today,
+                "last_trade_date": self.last_trade_date,
+                "last_trade_timestamp": self.last_trade_timestamp
+            }
+            with open("live_state.json", "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+            logger.info("💾 Saved live state to live_state.json")
+        except Exception as e:
+            logger.error(f"Failed to save live_state.json: {e}")
 
     def load_market_data(self, symbol: str = "GC=F", start: str = None, end: str = None, interval: str = None) -> pd.DataFrame:
         """Load and prepare market data with 30-day indicator warmup buffer"""
@@ -309,6 +340,27 @@ class MasterOrchestrator:
 
     def analyze_at_timestamp(self, timestamp: pd.Timestamp, row: pd.Series) -> Dict:
         """Runs the complete hierarchical 5-Agent pipeline at a given timestamp"""
+        # 🛡️ Always check stop levels for open positions first in backtest mode
+        closed_trades = []
+        if self.mode != "LIVE" and hasattr(self, 'backtester') and self.backtester.open_positions:
+            closed_trades = self.backtester.check_stop_levels(
+                timestamp=str(timestamp),
+                current_price=row['close'],
+                high_price=row.get('high', row['close']),
+                low_price=row.get('low', row['close'])
+            )
+            if closed_trades:
+                for trade in closed_trades:
+                    outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
+                    pnl = trade.get("profit_loss", 0)
+                    lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
+                    if outcome == "LOSS":
+                        lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
+                    else:
+                        lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
+                    self.learning_memory.append(lesson)
+                    logger.info(f"   🧠 New Lesson Learned: {lesson}")
+
         # Multi-Timeframe Integration:
         # daily_data: 1200 candles (approx. 50 trading days) to determine macro trend, regime, and Fibo structures
         daily_data = self.market_data[:timestamp].tail(1200)
@@ -338,6 +390,17 @@ class MasterOrchestrator:
         if not self.is_golden_hour(check_time):
             logger.info(f"   ➜ Sniper Engine: Outside Golden Hours (Hour: {check_time.hour} UTC). Standing aside.")
             return {"status": "SKIPPED", "reason": "OUTSIDE_GOLDEN_HOURS"}
+
+        # 🛡️ Boss Filter 3: Check Cool-down period (Min 60 minutes between trades in LIVE mode to prevent immediate overtrading)
+        if self.mode == "LIVE" and self.last_trade_timestamp:
+            try:
+                last_time = pd.to_datetime(self.last_trade_timestamp)
+                time_diff = (datetime.now() - last_time).total_seconds() / 60.0
+                if time_diff < 60.0:
+                    logger.info(f"   ➜ Sniper Engine: Cool-down active. Last trade activity was {time_diff:.1f} minutes ago (Min: 60 mins). Standing aside.")
+                    return {"status": "SKIPPED", "reason": "COOL_DOWN_ACTIVE"}
+            except Exception as e:
+                logger.error(f"Error in cool-down check: {e}")
 
         analysis_record = {
             "timestamp": str(timestamp),
@@ -721,33 +784,12 @@ class MasterOrchestrator:
             analysis_record["trade_executed"] = trade_executed
             if trade_executed:
                 self.trades_today += 1
+                if self.mode == "LIVE":
+                    self.last_trade_timestamp = str(datetime.now())
+                    self._save_live_state()
         else:
             logger.info("   ➜ Skipping: NO_TRADE or Low Confidence")
             analysis_record["trade_executed"] = False
-
-        # Manage open backtest positions and capture feedback
-        closed_trades = []
-        if self.mode != "LIVE":
-            closed_trades = self.backtester.check_stop_levels(
-                timestamp=str(timestamp),
-                current_price=row['close'],
-                high_price=row.get('high', row['close']),
-                low_price=row.get('low', row['close'])
-            )
-            
-            # 🧠 LEARNING: Update memory with trade results
-            if closed_trades:
-                for trade in closed_trades:
-                    outcome = "WIN" if trade.get("profit_loss", 0) > 0 else "LOSS"
-                    pnl = trade.get("profit_loss", 0)
-                    lesson = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f}). "
-                    if outcome == "LOSS":
-                        lesson += f"Strategy failed to hold support/resistance at {trade.get('entry_price')}. Be more conservative with conviction in similar regimes."
-                    else:
-                        lesson += f"Strategy successful at {trade.get('entry_price')}. Maintain conviction in this regime."
-                    
-                    self.learning_memory.append(lesson)
-                    logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
         self.analysis_history.append(analysis_record)
         if self.mode == "LIVE":
@@ -1177,6 +1219,10 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
                 logger.error(f"Failed to send Discord close report: {e}")
 
         # Update and save
+        if len(still_open) < len(self.open_positions):
+            if self.mode == "LIVE":
+                self.last_trade_timestamp = str(datetime.now())
+                self._save_live_state()
         self.open_positions = still_open
         self._save_live_positions()
 
