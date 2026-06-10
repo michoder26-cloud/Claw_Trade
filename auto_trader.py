@@ -462,7 +462,8 @@ class AutoTrader:
                 tp_distance = self.config.FIXED_TP_USD
             else:
                 atr = latest.get("atr", 2.0)
-                sl_distance = max(atr * 3.5, 12.0)
+                atr_multiplier = getattr(self.config, "ATR_SL_MULTIPLIER", 1.0)
+                sl_distance = max(atr * atr_multiplier, 5.0)
                 tp_distance = sl_distance * self.config.RISK_REWARD_RATIO
 
             if decision == "BUY":
