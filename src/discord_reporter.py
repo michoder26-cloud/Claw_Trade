@@ -91,6 +91,7 @@ class DiscordReporter:
         bull_argument: str,
         bear_argument: str,
         ceo_reasoning: str,
+        is_cent_account: bool = False,
     ):
         """Send a detailed report when an auto-trade order is opened"""
         now = datetime.now().strftime("%d %b %Y | %H:%M:%S น.")
@@ -101,6 +102,28 @@ class DiscordReporter:
         tp_distance = abs(tp_price - entry_price)
         rr_ratio = tp_distance / sl_distance if sl_distance > 0 else 0
 
+        # Calculate estimated monetary P&L
+        contract_size = 100.0  # Standard gold contract size
+        if is_cent_account:
+            # Cent account: profit in cents = distance * lot * 100. profit in USD = distance * lot.
+            est_profit_usd = tp_distance * lot_size
+            est_loss_usd = sl_distance * lot_size
+            est_profit_cents = est_profit_usd * 100
+            est_loss_cents = est_loss_usd * 100
+            pnl_info = (
+                f"💰 **ประมาณการกำไร (Est. Profit):** `+${est_profit_usd:.2f} USD` ({est_profit_cents:,.0f} Cents)\n"
+                f"📉 **ประมาณการขาดทุน (Est. Risk):** `-${est_loss_usd:.2f} USD` ({est_loss_cents:,.0f} Cents)\n"
+                f"ℹ️ **ประเภทบัญชี:** `Cent Account (บัญชีเซนต์)`"
+            )
+        else:
+            est_profit_usd = tp_distance * lot_size * contract_size
+            est_loss_usd = sl_distance * lot_size * contract_size
+            pnl_info = (
+                f"💰 **ประมาณการกำไร (Est. Profit):** `+${est_profit_usd:,.2f} USD`\n"
+                f"📉 **ประมาณการขาดทุน (Est. Risk):** `-${est_loss_usd:,.2f} USD`\n"
+                f"ℹ️ **ประเภทบัญชี:** `Standard Account (บัญชีปกติ)`"
+            )
+
         payload = {
             "embeds": [
                 {
@@ -110,11 +133,12 @@ class DiscordReporter:
                         f"สัญลักษณ์: **ทองคำ (XAU/USD)**\n"
                         f"คำสั่ง: {signal_emoji} **{signal}** | ขนาด: **{lot_size:.2f} Lot**\n"
                         f"ราคาเปิด (Entry): **${entry_price:.2f}**\n"
-                        f"เป้าทำกำไร (TP): **${tp_price:.2f}** (+${tp_distance:.2f})\n"
-                        f"ตัดขาดทุน (SL): **${sl_price:.2f}** (-${sl_distance:.2f})\n"
+                        f"เป้าทำกำไร (TP): **${tp_price:.2f}** (ระยะวิ่ง +${tp_distance:.2f})\n"
+                        f"ตัดขาดทุน (SL): **${sl_price:.2f}** (ระยะวิ่ง -${sl_distance:.2f})\n"
                         f"Risk:Reward = **1:{rr_ratio:.1f}**\n"
                         f"ความมั่นใจ: **{confidence*100:.0f}%**\n"
-                        f"Ticket: **#{ticket or 'N/A'}**"
+                        f"Ticket: **#{ticket or 'N/A'}**\n\n"
+                        f"{pnl_info}"
                     ),
                     "color": signal_color,
                     "timestamp": datetime.utcnow().isoformat(),

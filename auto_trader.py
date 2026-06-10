@@ -87,6 +87,7 @@ class AutoTrader:
         self.trades_today = 0
         self.last_trade_date: Optional[str] = None
         self.trade_history: List[Dict] = []
+        self.is_cent_account = False
 
         # Memory file for lessons learned
         self.memory_file = os.path.join(
@@ -227,11 +228,13 @@ class AutoTrader:
                 # Calculate P&L
                 contract_size = 100.0
                 if pos.signal == "BUY":
-                    pnl_usd = (exit_price - pos.entry_price) * pos.lot_size * contract_size
+                    pnl_raw = (exit_price - pos.entry_price) * pos.lot_size * contract_size
                     pnl_pips = (exit_price - pos.entry_price) * 10
                 else:
-                    pnl_usd = (pos.entry_price - exit_price) * pos.lot_size * contract_size
+                    pnl_raw = (pos.entry_price - exit_price) * pos.lot_size * contract_size
                     pnl_pips = (pos.entry_price - exit_price) * 10
+
+                pnl_usd = pnl_raw / 100.0 if self.is_cent_account else pnl_raw
 
                 is_win = pnl_usd >= 0
 
@@ -489,6 +492,7 @@ class AutoTrader:
                         currency = getattr(acc_info, "currency", "")
                         if "CENT" in currency.upper() or self.mt5.symbol.endswith("c"):
                             is_cent_account = True
+                            self.is_cent_account = True
                             logger.info(f"   🪙 Cent Account Detected (Currency: {currency}, Symbol: {self.mt5.symbol}). Converting balance for sizing.")
                     sym_info = mt5_lib.symbol_info(self.mt5.symbol)
                     if sym_info is not None:
@@ -564,6 +568,7 @@ class AutoTrader:
                     bull_argument=bull_argument,
                     bear_argument=bear_argument,
                     ceo_reasoning=ceo_reasoning,
+                    is_cent_account=is_cent_account,
                 )
 
                 logger.info(f"✅ Order executed! Ticket #{ticket} | Discord report sent!")
