@@ -1,24 +1,25 @@
-version: '3.8'
-
+version: '3'
 services:
-  xau-trading-system:
-    build: .
-    container_name: xau-trading-bot
-    environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      INITIAL_BALANCE: ${INITIAL_BALANCE:-10000}
-      POSITION_SIZE_PERCENT: ${POSITION_SIZE_PERCENT:-2}
-      MAX_DRAWDOWN_PERCENT: ${MAX_DRAWDOWN_PERCENT:-10}
-      BACKTESTING_START_DATE: ${BACKTESTING_START_DATE:-2023-01-01}
-      BACKTESTING_END_DATE: ${BACKTESTING_END_DATE:-2024-12-31}
-    volumes:
-      - ./results:/app/results
-      - ./logs:/app/logs
-      - ./.env:/app/.env:ro
+  mt5:
+    image: gmag11/metatrader5_vnc
+    container_name: claw-trade-mt5
     restart: unless-stopped
-    networks:
-      - trading-network
+    ports:
+      - "3000:3000"   # VNC Web UI (สำหรับล็อกอิน MT5 ครั้งแรก)
+      - "8001:8001"   # RPyC API (สำหรับ Python bot)
+    volumes:
+      - mt5_config:/config
+    environment:
+      - CUSTOM_USER=trader
+      - PASSWORD=change_me_pls
+      # MT5 auto-login (optional - uncomment and fill in)
+      # - MT5_CMD_OPTIONS=/config:C:\config\mt5.ini
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
 
-networks:
-  trading-network:
-    driver: bridge
+volumes:
+  mt5_config:

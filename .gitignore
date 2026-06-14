@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.env.bak
 .env.local
 .env.*.local
 
@@ -51,6 +52,7 @@ logs/
 
 # Temporary files
 *.tmp
+*.pid
 .tmp/
 temp/
 

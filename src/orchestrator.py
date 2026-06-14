@@ -52,7 +52,7 @@ class MasterOrchestrator:
         # Data handler
         self.data_handler = DataHandler()
 
-        # Initialize MT5 Connector
+        # Initialize MT5 Connector (supports native + mt5linux Docker)
         self.mt5_connector = MT5Connector()
 
         # Initialize Discord Reporter
@@ -1003,7 +1003,7 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
             return
 
         still_open = []
-        import MetaTrader5 as mt5
+        from mt5_connector import mt5 as _mt5
 
         for pos in self.open_positions:
             ticket = pos.get("ticket")
@@ -1144,8 +1144,8 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
             logger.info(f"🔔 Live Position #{ticket} has been closed! Querying history from MT5...")
             
             # Fetch history deals for this position
-            if mt5.initialize():
-                deals = mt5.history_deals_get(position=ticket)
+            if True:  # Already connected via mt5_connector
+                deals = _mt5.history_deals_get(position=ticket)
             else:
                 deals = None
             
@@ -1158,7 +1158,7 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
                 # Find the deal representing the exit (DEAL_ENTRY_OUT = 1)
                 exit_deal = None
                 for deal in deals:
-                    if deal.entry == mt5.DEAL_ENTRY_OUT or deal.entry == 1:
+                    if deal.entry == _mt5.DEAL_ENTRY_OUT or deal.entry == 1:
                         exit_deal = deal
                         break
                 

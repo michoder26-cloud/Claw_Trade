@@ -1,13 +1,29 @@
-"""MetaTrader 5 Connector for XAU/USD Trading Automation"""
+"""MetaTrader 5 Connector for XAU/USD Trading Automation
+Supports: native (Windows) + mt5linux (Linux via Docker RPyC)
+"""
 import os
 import logging
 import pandas as pd
 from typing import Dict, Optional
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
+# Try mt5linux first (Linux + Docker), fall back to native MetaTrader5 (Windows)
 try:
-    import MetaTrader5 as mt5
+    from mt5linux import MetaTrader5 as _MT5Client
+    _MT5_HOST = os.getenv("MT5_HOST", "127.0.0.1")
+    _MT5_PORT = int(os.getenv("MT5_PORT", "8001"))
+    mt5 = _MT5Client(host=_MT5_HOST, port=_MT5_PORT)
+    _USING_MT5LINUX = True
+    logging.getLogger(__name__).info("🐳 Using mt5linux (Linux Docker mode)")
 except ImportError:
-    mt5 = None
+    try:
+        import MetaTrader5 as mt5
+        _USING_MT5LINUX = False
+        logging.getLogger(__name__).info("🪟 Using native MetaTrader5 (Windows mode)")
+    except ImportError:
+        mt5 = None
+        _USING_MT5LINUX = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,7 +86,7 @@ class MT5Connector:
         # Select symbol
         if not mt5.symbol_select(self.symbol, True):
             logger.warning(f"Symbol '{self.symbol}' not found in MetaTrader 5. Trying alternative gold symbols...")
-            alternatives = ["XAUUSD", "GOLD", "XAUUSD.m", "XAUUSD.", "XAUUSD.i", "XAUUSD_"]
+            alternatives = ["XAUUSD", "GOLD", "XAUUSD.m", "XAUUSD.", "XAUUSD.i", "XAUUSD_", "XAUUSDc"]
             found = False
             for alt in alternatives:
                 if mt5.symbol_select(alt, True):
@@ -242,7 +258,44 @@ class MT5Connector:
         """Fetch MT5 account information"""
         if not self.connect() or mt5 is None:
             return None
-        return mt5.account_info()
+        
+        try:
+            info = mt5.account_info()
+            if info is None:
+                return None
+            
+            # mt5linux returns a tuple/list, native MT5 returns a named tuple
+            if isinstance(info, (tuple, list)):
+                # Tuple format: (login, trade_mode, leverage, limit_orders, ...)
+                return {
+                    'login': info[0] if len(info) > 0 else 0,
+                    'balance': info[8] if len(info) > 8 else 0,
+                    'equity': info[11] if len(info) > 11 else 0,
+                    'margin': info[12] if len(info) > 12 else 0,
+                    'margin_free': info[13] if len(info) > 13 else 0,
+                    'server': info[16] if len(info) > 16 else '',
+                    'currency': info[17] if len(info) > 17 else '',
+                    'name': info[18] if len(info) > 18 else '',
+                    'leverage': info[2] if len(info) > 2 else 0,
+                    'trade_allowed': info[6] if len(info) > 6 else False,
+                }
+            else:
+                # Native MT5 named tuple
+                return {
+                    'login': info.login,
+                    'balance': info.balance,
+                    'equity': info.equity,
+                    'margin': info.margin,
+                    'margin_free': info.margin_free,
+                    'server': info.server,
+                    'currency': info.currency,
+                    'name': info.name,
+                    'leverage': info.leverage,
+                    'trade_allowed': info.trade_allowed,
+                }
+        except Exception as e:
+            logger.warning(f"Cannot get account info: {e}")
+            return None
 
     def is_position_open(self, ticket: int) -> bool:
         """Check if a specific position ticket is still active in MT5"""
