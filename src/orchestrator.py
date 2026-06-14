@@ -624,7 +624,8 @@ class MasterOrchestrator:
                 atr_value = 20.0  # Fallback
 
             if os.getenv("USE_ATR_SL", "true").lower() == "true":
-                sl_distance = max(atr_value * atr_multiplier, 5.0)  # Minimum 5 USD SL
+                min_sl = getattr(self.config, "MIN_SL_USD", 5.0)
+                sl_distance = max(atr_value * atr_multiplier, min_sl)  # Minimum USD SL from config
                 tp_distance = sl_distance * rr
 
                 # Adjust SL to sit behind structure level

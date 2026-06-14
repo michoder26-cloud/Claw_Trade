@@ -466,7 +466,8 @@ class AutoTrader:
             else:
                 atr = latest.get("atr", 2.0)
                 atr_multiplier = getattr(self.config, "ATR_SL_MULTIPLIER", 1.0)
-                sl_distance = max(atr * atr_multiplier, 5.0)
+                min_sl = getattr(self.config, "MIN_SL_USD", 5.0)
+                sl_distance = max(atr * atr_multiplier, min_sl)
                 tp_distance = sl_distance * self.config.RISK_REWARD_RATIO
 
             if decision == "BUY":

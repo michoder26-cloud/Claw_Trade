@@ -34,6 +34,7 @@ class Config:
     # ATR-Based Dynamic SL (Anti-SL Hunt Upgrade)
     ATR_PERIOD = int(os.getenv("ATR_PERIOD", 5))
     ATR_SL_MULTIPLIER = float(os.getenv("ATR_SL_MULTIPLIER", 1.0))
+    MIN_SL_USD = float(os.getenv("MIN_SL_USD", 5.0))
 
     # Multi-Phase Trailing Stop
     TRAIL_BREAKEVEN_TRIGGER = float(os.getenv("TRAIL_BREAKEVEN_TRIGGER", 1.0))  # Move SL to breakeven when profit >= 1.0x SL distance

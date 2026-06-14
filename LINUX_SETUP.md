@@ -98,7 +98,7 @@ services:
       - mt5_config:/config
     environment:
       - CUSTOM_USER=trader
-      - PASSWORD=clawtrade2026   # Change this!
+      - PASSWORD=change_me_pls   # Change this!
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
@@ -120,7 +120,7 @@ docker compose up -d
 
 # Open VNC in browser
 # Go to: http://YOUR_SERVER_IP:3000
-# Login: trader / clawtrade2026
+# Login: trader / change_me_pls
 ```
 
 Once inside the remote desktop:
@@ -350,7 +350,7 @@ Initializing MetaTrader 5...
 ✅ Connected!
    Balance: $10,450.96
    Server: FBSTradestone-Demo
-   Name: Thanyathep Wattanasataporn
+   Name: Your Name
    XAUUSDc: Ask=4217.30 Bid=4217.02
 ```
 

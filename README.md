@@ -81,60 +81,88 @@ When the price enters the **Tier 3 (78.6% - 88.7%)** zone and momentum (RSI) con
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites (สเปกและความต้องการของระบบ)
-- **ระบบปฏิบัติการ (OS)**: บอทนี้ใช้งานไลบรารี `MetaTrader5` สำหรับ Python ซึ่งจะ**รองรับเฉพาะบน Windows เท่านั้น**
-- **แอปพลิเคชัน MT5**: ต้องติดตั้งโปรแกรม **MetaTrader 5 Terminal** ลงบนเครื่อง Windows และล็อกอินเข้าบัญชีเทรด (เดโม หรือ พอร์ตจริง) ไว้เรียบร้อยแล้ว
-- **การตั้งค่าใน MT5**: 
-  1. ไปที่ `Tools -> Options -> Expert Advisors`
-  2. ติ๊กเลือก **"Allow Algo Trading"** (อนุญาตให้บอทส่งคำสั่งซื้อขาย) และ **"Allow DLL imports"**
-  3. เพิ่มสัญลักษณ์ทองคำ (เช่น `XAUUSD` หรือสัญลักษณ์ Gold ของโบรกเกอร์คุณ เช่น `GOLD`, `XAUUSD.m`) เข้ามาในหน้าต่าง **Market Watch** ใน MT5
-- **การติดตั้งแพ็กเกจ**:
-  ```bash
-  pip install -r requirements.txt
-  ```
+### 1. Prerequisites (ความต้องการของระบบ)
+ระบบสามารถทำงานได้ 2 รูปแบบตามระบบปฏิบัติการของบอส:
 
-### 2. Setup Environment (ตั้งค่าไฟล์ระบบ)
-ก๊อบปี้ไฟล์ตัวอย่างการตั้งค่าไปสร้างเป็นไฟล์ `.env`:
+*   **Windows Setup (Native):** รันตรง ๆ บน Windows (จำเป็นต้องเปิดโปรแกรม MT5 Terminal ควบคู่ไปด้วย)
+*   **Linux Setup (Docker + mt5linux):** รันบน Linux VPS / Terminal-only (จำลองโปรแกรม MT5 ผ่าน Docker + Wine + mt5linux RPyC Bridge)
+
+---
+
+### 💻 2. วิธีการติดตั้งสำหรับ Windows (Native)
+1. **ติดตั้ง MT5:** ดาวน์โหลดและติดตั้ง **MetaTrader 5 Desktop** และเข้าสู่ระบบบัญชีเทรดให้เรียบร้อย
+2. **เปิดสิทธิ์บอท:** ไปที่ `Tools -> Options -> Expert Advisors` -> ติ๊กเลือก **"Allow Algo Trading"** และ **"Allow DLL imports"**
+3. **แสดงสัญลักษณ์ทองคำ:** กด `Ctrl+M` (Market Watch) และคลิกขวาเลือกสัญลักษณ์ทองคำ (เช่น `XAUUSD` หรือ `GOLD` หรือ `XAUUSDc` ตามโบรกเกอร์)
+4. **ติดตั้ง Python Packages:** เปิด Command Prompt ในโฟลเดอร์บอทแล้วพิมพ์:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+---
+
+### 🐧 3. วิธีการติดตั้งสำหรับ Linux (Docker + mt5linux)
+เหมาะสำหรับรันบน Linux VPS หรือระบบ Terminal-only โดยไม่ต้องเช่า Windows VPS ราคาแพงค่ะ
+
+1. **ติดตั้ง Docker และ Docker Compose:**
+   ```bash
+   sudo apt update && sudo apt install docker.io docker-compose-v2 -y
+   sudo systemctl enable --now docker
+   ```
+2. **เริ่มการทำงานคอนเทนเนอร์ MT5:**
+   ```bash
+   docker compose up -d
+   ```
+3. **ตั้งค่า MT5 ผ่าน VNC:**
+   * เปิดเว็บบราวเซอร์ไปที่: `http://IP_VPSของบอส:3000`
+   * เข้าสู่ระบบด้วยชื่อผู้ใช้: `trader` และรหัสผ่าน: `change_me_pls` (แก้ไขได้ใน [docker-compose.yml](file:///c:/Users/TKTF/Desktop/Sub_Agent/xau_trading_system/docker-compose.yml))
+   * ดับเบิ้ลคลิกเปิด **MetaTrader 5** -> เข้าสู่ระบบบัญชีเทรด -> ไปที่ `Tools -> Options -> Expert Advisors` -> ติ๊กเลือก **"Allow Algo Trading"**
+4. **ติดตั้งแพ็คเกจบน Linux Host:**
+   ```bash
+   pip install mt5linux rpyc -r requirements.txt
+   ```
+5. **เริ่มการทำงานของ API Bridge:**
+   ในคอนเทนเนอร์จะเปิด RPyC Server ที่พอร์ต `8001` โดยอัตโนมัติ (สามารถเช็คสถานะการรันและระบบ Watchdog ตรวจสอบเพิ่มเติมได้ในคู่มือฉบับเต็มที่ [LINUX_SETUP.md](file:///c:/Users/TKTF/Desktop/Sub_Agent/xau_trading_system/LINUX_SETUP.md) ค่ะ)
+
+---
+
+### ⚙️ 4. Setup Environment (ตั้งค่าไฟล์ระบบ)
+คัดลอกไฟล์ตัวอย่างไปสร้างเป็นไฟล์ `.env`:
 ```bash
 cp .env.example .env
 ```
-เปิดไฟล์ `.env` ขึ้นมาเพื่อกรอกข้อมูลที่จำเป็น:
-*   `OPENROUTER_API_KEY`: คีย์สำหรับเชื่อมต่อ AI ของ OpenRouter (ใช้ขับเคลื่อนการวิเคราะห์ตัดสินใจของ CEO, Bull, Bear และประเมินบทเรียนเทรด)
-*   `DISCORD_WEBHOOK_URL`: ลิงก์ Discord Webhook สำหรับรับการรายงานแบบเรียลไทม์ (แจ้งเตือนเปิดออเดอร์, ปิดออเดอร์, การลาก Trailing Stop, รายงานรายสัปดาห์)
-*   **การตั้งค่า MT5 (Live / Paper Trading เท่านั้น)**:
-    *   `MT5_LOGIN`: รหัสสมาชิกบัญชีเทรด MT5 (เช่น `106123714`) *หากเว้นไว้ บอทจะใช้บัญชีที่ล็อกอินอยู่ปัจจุบันในโปรแกรม MT5*
-    *   `MT5_PASSWORD`: รหัสผ่านบัญชี MT5
-    *   `MT5_SERVER`: ชื่อเซิร์ฟเวอร์โบรกเกอร์ (เช่น `FBSTradestone-Demo`)
-    *   `MT5_SYMBOL`: สัญลักษณ์ทองคำบนโบรกเกอร์ของคุณ (เช่น `XAUUSD` หรือ `GOLD`)
-*   **การตั้งค่า Trailing Stop**:
-    *   `USE_TRAILING_STOP`: ตั้งเป็น `true` เพื่อเปิดใช้ Trailing Stop แบบ 3 ระยะ
-    *   `TRAIL_BREAKEVEN_TRIGGER`: สัดส่วนการขยับ SL ไปหน้าทุน (ค่าเริ่มต้น: `1.0` เท่าของระยะ SL)
-    *   `TRAIL_LOCK_TRIGGER`: สัดส่วนการขยับ SL ไปล็อกกำไร 50% (ค่าเริ่มต้น: `2.0` เท่าของระยะ SL)
+เปิดไฟล์ `.env` ขึ้นมาและกรอกรายละเอียด:
+*   `OPENROUTER_API_KEY`: คีย์สำหรับ AI (CEO/News/Bull/Bear)
+*   `DISCORD_WEBHOOK_URL`: ลิงก์แจ้งเตือนเข้าห้องเทรด Discord
+*   **สำหรับ Windows:** ตั้งค่าบัญชี MT5 ทั่วไป
+*   **สำหรับ Linux:** ระบุไอพีของ Bridge เพิ่มเติมใน `.env`:
+    ```bash
+    MT5_HOST=127.0.0.1
+    MT5_PORT=8001
+    MT5_SYMBOL=XAUUSDc  # ชื่อสัญลักษณ์ทองคำใน MT5 ของบอส
+    ```
 
-### 3. Running Commands (คำสั่งการใช้งาน)
+---
 
-#### 🧪 3.1 การรัน Backtest (ทดสอบย้อนหลัง)
-คุณสามารถรันตัวทดสอบย้อนหลังเพื่อวิเคราะห์ประสิทธิภาพของบอทด้วยสถิติต่างๆ:
+### 🏃 5. Running Commands (คำสั่งการใช้งาน)
+
+#### 🧪 5.1 การรัน Backtest (ทดสอบย้อนหลัง)
+รันวิเคราะห์ข้อมูลย้อนหลังเพื่อวิเคราะห์ประสิทธิภาพ:
 ```bash
-# แบบรันการทดสอบเบื้องต้น (ใช้ไฟล์เช็ค Trailing Stop)
-python check_24_25_trailing_stop.py
-
-# หรือรันผ่าน main.py เพื่อกำหนดช่วงเวลาและสัญลักษณ์เอง:
-python main.py backtest --start-date 2026-01-01 --end-date 2026-05-01 --interval 1h --risk-pct 15.0
+python main.py backtest --start-date 2025-06-01 --end-date 2026-06-01 --interval 1h --risk-pct 1.5
 ```
 
-#### 📄 3.2 การรัน Paper Trading (จำลองการเทรดสดบนบัญชี Demo)
-รันบอทวิเคราะห์ตลาดสดและจำลองการเทรดโดยใช้ยอดเงินและพอร์ตของ MT5 Demo Account:
+#### 📄 5.2 การรัน Demo Trading (บัญชีจำลองสด)
+วิเคราะห์ตลาดสดและเข้าจำลองการเทรดโดยใช้เงินในพอร์ตเดโม MT5:
 ```bash
 python main.py paper --interval 60
 ```
 
-#### ⚠️ 3.3 การรัน Live Trading (เทรดจริงบนพอร์ตเงินจริง)
-รันบอทให้เข้าคุมพอร์ตและเปิดออเดอร์ส่งคำสั่งซื้อขายจริงด้วยเงินจริงบนบัญชีจริง:
+#### ⚠️ 5.3 การรัน Live Trading (เทรดจริงเงินจริง)
+รันบอทเข้าเทรดจริงบนพอร์ตเงินจริง (สับสวิตช์ปิด Mock AI ใน `.env` เป็น `USE_MOCK_AI=False` ก่อนรัน):
 ```bash
 python main.py live --confirm --interval 60
 ```
-> **หมายเหตุความปลอดภัย**: การรันโหมด `live` จำเป็นต้องระบุแฟล็ก `--confirm` เสมอ เพื่อเป็นการยืนยันความเสี่ยงก่อนที่ระบบจะเริ่มทำงาน
+> **ความปลอดภัย:** โหมด `live` จำเป็นต้องระบุแฟล็ก `--confirm` เสมอ เพื่อยืนยันการยอมรับความเสี่ยงของพอร์ตค่ะบอส
 
 ---
 
