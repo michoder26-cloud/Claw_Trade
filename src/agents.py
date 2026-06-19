@@ -134,6 +134,7 @@ class QuantAnalyst:
                 "open": indicators.get("open", 0),
                 "ema_200": ema_200,
                 "fibo_zone": indicators.get("fibo_zone", "neutral"),
+                "fibo_circle_zone": indicators.get("fibo_circle_zone", "neutral"),
                 "regime": regime,
                 "hour": indicators.get("hour", 12),
                 "d1_upper_wick": indicators.get("d1_upper_wick", 0.0),
@@ -248,7 +249,7 @@ class BullAgent:
             # MMTC v2.0 Intelligent Bull Strategy (No-AI Quant Mode)
             regime = quant_analysis.get("regime", "RANGING")
             fibo_zone = quant_analysis.get("fibo_zone", "neutral")
-            rsi = quant_analysis.get("rsi_value", 50.0)
+            rsi = quant_analysis.get("rsi_value") or 50.0
             macd_cross = quant_analysis.get("macd_cross", "neutral")
             close = quant_analysis.get("close", 0.0)
             bb_lower = quant_analysis.get("bb_lower", 0.0)
@@ -304,11 +305,12 @@ class BullAgent:
 
             # Setup E: Fibonacci Circle Convergence
             if signal == "HOLD":
-                fibo_circle_zone = quant_analysis.get("fibo_circle_zone", "neutral")
-                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi < 45:
+                fibo_circle_zone = quant_analysis.get("fibo_circle_zone") or "neutral"
+                rsi_val = quant_analysis.get("rsi_value") or 50.0
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val < 45:
                     signal = "BUY"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Support]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi:.1f}) oversold."
+                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Support]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi_val:.1f}) oversold."
 
             return AnalysisResult(
                 agent_name="BullishStrategist",
@@ -362,7 +364,7 @@ class BearAgent:
             # MMTC v2.0 Intelligent Bear Strategy (No-AI Quant Mode)
             regime = quant_analysis.get("regime", "RANGING")
             fibo_zone = quant_analysis.get("fibo_zone", "neutral")
-            rsi = quant_analysis.get("rsi_value", 50.0)
+            rsi = quant_analysis.get("rsi_value") or 50.0
             macd_cross = quant_analysis.get("macd_cross", "neutral")
             close = quant_analysis.get("close", 0.0)
             bb_upper = quant_analysis.get("bb_upper", 0.0)
@@ -418,11 +420,12 @@ class BearAgent:
 
             # Setup E: Fibonacci Circle Convergence
             if signal == "HOLD":
-                fibo_circle_zone = quant_analysis.get("fibo_circle_zone", "neutral")
-                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi > 55:
+                fibo_circle_zone = quant_analysis.get("fibo_circle_zone") or "neutral"
+                rsi_val = quant_analysis.get("rsi_value") or 50.0
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val > 55:
                     signal = "SELL"
                     confidence = 0.85
-                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Resistance]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi:.1f}) overbought."
+                    reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Resistance]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi_val:.1f}) overbought."
 
             return AnalysisResult(
                 agent_name="BearishStrategist",
