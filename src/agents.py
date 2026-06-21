@@ -262,18 +262,18 @@ class BullAgent:
 
             if regime == "RANGING":
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                if fibo_zone == "all_in_market_maker" and rsi < 40 and macd_cross != "bearish_cross":
+                if fibo_zone == "all_in_market_maker" and rsi < 45 and macd_cross != "bearish_cross":
                     signal = "BUY"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is oversold. Strong institutional liquidity sweep expected. [OVERRIDE_LOT_MULTIPLIER=3.0] [TIGHT_SL=True]"
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Lower support + oversold)
-                elif fibo_zone == "discount_premium" and close <= bb_lower + 3.0 and rsi < 42:
+                elif fibo_zone == "discount_premium" and close <= bb_lower + 5.0 and rsi < 48:
                     signal = "BUY"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Lower Limit in Discount Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                if close > ema_50 and close > ema_200 and rsi > 52 and macd_cross == "bullish_cross":
+                if close > ema_50 and close > ema_200 and rsi > 50 and macd_cross == "bullish_cross":
                     signal = "BUY"
                     confidence = 0.85
                     reasoning = f"MMTC v2.0 [Trending Breakout]: Strong trending ride. Price is above EMA 50 & 200 with bullish MACD crossover."
@@ -289,12 +289,12 @@ class BullAgent:
                 # Rule D2: Daily Wick Fill Bullish Bias (Wick Creation target)
                 # Must align with institutional discount or market maker zones to ensure high win rate!
                 is_wick_fill = (
-                    d1_lower_wick >= 12.0 
+                    d1_lower_wick >= 10.0 
                     and d1_upper_wick < 1.0 
                     and fibo_zone in ["discount_premium", "all_in_market_maker"]
                     and close > open_price 
-                    and (close - open_price) >= 5.0 
-                    and rsi > 52 
+                    and (close - open_price) >= 4.0 
+                    and rsi > 50 
                     and macd_cross == "bullish_cross"
                 )
 
@@ -307,7 +307,7 @@ class BullAgent:
             if signal == "HOLD":
                 fibo_circle_zone = quant_analysis.get("fibo_circle_zone") or "neutral"
                 rsi_val = quant_analysis.get("rsi_value") or 50.0
-                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val < 45:
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val < 50:
                     signal = "BUY"
                     confidence = 0.85
                     reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Support]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi_val:.1f}) oversold."
@@ -377,18 +377,18 @@ class BearAgent:
 
             if regime == "RANGING":
                 # Setup A: Tier 3 - Market Maker All-In Zone (78.6% - 88.7% Retracement)
-                if fibo_zone == "all_in_market_maker" and rsi > 60 and macd_cross != "bullish_cross":
+                if fibo_zone == "all_in_market_maker" and rsi > 55 and macd_cross != "bullish_cross":
                     signal = "SELL"
                     confidence = 0.92
                     reasoning = f"MMTC v2.0 [Tier 3]: Price in Market Maker All-In Zone ({fibo_zone}) during Ranging regime. RSI ({rsi:.1f}) is overbought. Strong institutional liquidity sweep expected. [OVERRIDE_LOT_MULTIPLIER=3.0] [TIGHT_SL=True]"
                 # Setup B: Tier 2 - Fair Value swing (Bollinger Band Upper resistance + overbought)
-                elif fibo_zone == "discount_premium" and close >= bb_upper - 3.0 and rsi > 58:
+                elif fibo_zone == "discount_premium" and close >= bb_upper - 5.0 and rsi > 52:
                     signal = "SELL"
                     confidence = 0.82
                     reasoning = f"MMTC v2.0 [Tier 2]: Price reached Bollinger Band Upper Limit in Premium Pool ({fibo_zone}). RSI is {rsi:.1f}."
             elif regime == "TRENDING":
                 # Setup C: Trending breakout ride
-                if close < ema_50 and close < ema_200 and rsi < 48 and macd_cross == "bearish_cross":
+                if close < ema_50 and close < ema_200 and rsi < 50 and macd_cross == "bearish_cross":
                     signal = "SELL"
                     confidence = 0.85
                     reasoning = f"MMTC v2.0 [Trending Breakdown]: Strong trending ride. Price is below EMA 50 & 200 with bearish MACD crossover."
@@ -404,12 +404,12 @@ class BearAgent:
                 # Rule D2: Daily Wick Fill Bearish Bias (Wick Creation target)
                 # Must align with institutional premium or market maker zones to ensure high win rate!
                 is_wick_fill = (
-                    d1_upper_wick >= 12.0 
+                    d1_upper_wick >= 10.0 
                     and d1_lower_wick < 1.0 
                     and fibo_zone in ["discount_premium", "all_in_market_maker"]
                     and close < open_price 
-                    and (open_price - close) >= 5.0 
-                    and rsi < 48 
+                    and (open_price - close) >= 4.0 
+                    and rsi < 50 
                     and macd_cross == "bearish_cross"
                 )
 
@@ -422,7 +422,7 @@ class BearAgent:
             if signal == "HOLD":
                 fibo_circle_zone = quant_analysis.get("fibo_circle_zone") or "neutral"
                 rsi_val = quant_analysis.get("rsi_value") or 50.0
-                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val > 55:
+                if fibo_circle_zone in ["fibo_circle_golden", "fibo_circle_reversal", "fibo_circle_extreme"] and rsi_val > 50:
                     signal = "SELL"
                     confidence = 0.85
                     reasoning = f"MMTC v2.0 [Tier 2 - Fibo Circle Resistance]: Price intersecting Time/Price Arc ({fibo_circle_zone}) with RSI ({rsi_val:.1f}) overbought."
@@ -478,19 +478,68 @@ class CEOAgent:
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
             bull_conf = bull_case.get("conviction_score", 0)
             bear_conf = bear_case.get("conviction_score", 0)
-            
-            # MMTC v2.0 High-Probability Threshold (>= 0.78 for institutional setups)
-            threshold = 0.78
+
+            # ─── TREND FILTER ───
+            # Extract EMA50/EMA200 from quant_data to determine the dominant
+            # market trend. Counter-trend trades require higher conviction
+            # (0.85) so we avoid low-confidence fade trades against the trend.
+            # When the trend is strong (EMA gap > 1%), block counter-trend
+            # trades entirely regardless of confidence — the Market Maker
+            # setups (0.92 conf) were losing repeatedly against strong trends.
+            ema_50 = float(quant_data.get("ema_50", 0) or 0)
+            ema_200 = float(quant_data.get("ema_200", 0) or 0)
+            ema_gap_pct = abs(ema_50 - ema_200) / ema_200 if ema_200 > 0 else 0.0
+            uptrend = ema_50 > ema_200
+            downtrend = ema_50 < ema_200
+            strong_uptrend = uptrend and ema_gap_pct > 0.03
+            strong_downtrend = downtrend and ema_gap_pct > 0.03
+
+            # ─── RSI EXTREME FILTER ───
+            # Block BUY when RSI is overbought (>72) and SELL when RSI is
+            # oversold (<28). These are exhaustion zones where counter-trend
+            # entries have very low win rates.
+            rsi_value = float(quant_data.get("rsi_value", 50.0) or 50.0)
+            rsi_overbought = rsi_value > 78.0
+            rsi_oversold = rsi_value < 22.0
+
+            # MMTC v2.0 High-Probability Threshold (>= 0.68 for institutional setups)
+            threshold = 0.68
             if bull_conf > bear_conf and bull_conf >= threshold:
-                decision, confidence = "BUY", bull_conf
-                reason = f"Approved BUY setup: {bull_case.get('reasoning', '')}"
+                # RSI extreme filter: block BUY in overbought zone
+                if rsi_overbought:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"RSI Extreme Filter: BUY rejected — RSI {rsi_value:.1f} > 78 (overbought exhaustion zone)."
+                # Strong trend filter: block BUY entirely in a strong downtrend
+                elif strong_downtrend:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"Strong Trend Filter: BUY rejected — EMA50 < EMA200 by {ema_gap_pct*100:.1f}% (strong downtrend). No counter-trend trades in strong trends."
+                # Trend filter: if BUY in a downtrend, demand higher conviction
+                elif downtrend and bull_conf < 0.82:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"Trend Filter: BUY rejected — EMA50 < EMA200 (downtrend) and confidence {bull_conf:.2f} < 0.82 required for counter-trend trades."
+                else:
+                    decision, confidence = "BUY", bull_conf
+                    reason = f"Approved BUY setup: {bull_case.get('reasoning', '')}"
             elif bear_conf > bull_conf and bear_conf >= threshold:
-                decision, confidence = "SELL", bear_conf
-                reason = f"Approved SELL setup: {bear_case.get('reasoning', '')}"
+                # RSI extreme filter: block SELL in oversold zone
+                if rsi_oversold:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"RSI Extreme Filter: SELL rejected — RSI {rsi_value:.1f} < 22 (oversold exhaustion zone)."
+                # Strong trend filter: block SELL entirely in a strong uptrend
+                elif strong_uptrend:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"Strong Trend Filter: SELL rejected — EMA50 > EMA200 by {ema_gap_pct*100:.1f}% (strong uptrend). No counter-trend trades in strong trends."
+                # Trend filter: if SELL in an uptrend, demand higher conviction
+                elif uptrend and bear_conf < 0.82:
+                    decision, confidence = "NO_TRADE", 0.5
+                    reason = f"Trend Filter: SELL rejected — EMA50 > EMA200 (uptrend) and confidence {bear_conf:.2f} < 0.82 required for counter-trend trades."
+                else:
+                    decision, confidence = "SELL", bear_conf
+                    reason = f"Approved SELL setup: {bear_case.get('reasoning', '')}"
             else:
                 decision, confidence = "NO_TRADE", 0.5
                 reason = "MMTC v2.0: Standing aside. No high-conviction institutional setups confirmed."
-                
+
             return {"decision": decision, "confidence": confidence, "reasoning": reason, "executive_summary": "Mock MMTC v2.0 Executor"}
 
         memory_context = ""
@@ -584,3 +633,205 @@ class TradeReflectionEngine:
                 logger.info("✅ Reflection report successfully dispatched to Discord #gold-weekly-reflection!")
             except Exception as e:
                 logger.error(f"Failed to send reflection report to Discord: {e}")
+
+
+class RiskCriticAgent:
+    """Pre-trade risk reviewer. Audits CEO decisions before execution.
+
+    Reviews:
+    - Is the SL distance adequate for the current regime/volatility?
+    - Is the lot size within risk limits?
+    - Are we in a cooldown or near daily loss limit?
+    - Does the direction align with recent market performance?
+    - Is there a breaking-news risk event pending?
+
+    Returns a dict that can VETO, DOWNSIZE, or APPROVE.
+    """
+
+    def __init__(self):
+        self.model = Config.OPENROUTER_MODEL
+
+    def review(
+        self,
+        ceo_decision: Dict[str, Any],
+        quant_analysis: Dict[str, Any],
+        news_analysis: Dict[str, Any],
+        regime: str,
+        risk_context: Dict[str, Any],
+        recent_performance: Dict[str, Any],
+        learning_memory: List[str] = None,
+    ) -> Dict[str, Any]:
+        """Review a CEO trade decision.
+
+        Args:
+            ceo_decision: CEO output dict with keys: decision, confidence, reasoning
+            quant_analysis: QuantAnalyst output
+            news_analysis: NewsAnalyst output
+            regime: Current market regime string
+            risk_context: Dict from RiskManager containing:
+                - daily_pnl: float
+                - daily_loss_limit: float
+                - consecutive_losses: int
+                - cooldown_active: bool
+                - max_lot_allowed: float
+                - current_lot_proposed: float
+            recent_performance: Dict from TradeJournal containing:
+                - last_5_winrate: float
+                - regime_winrate: float
+                - recent_streak: str ("WWW", "LL", etc.)
+            learning_memory: List of past lesson strings
+
+        Returns:
+            Dict with keys:
+                - verdict: "APPROVE" | "VETO" | "DOWNSIZE"
+                - adjusted_lot_multiplier: float (1.0 = keep, 0.5 = halve, 0.0 = block)
+                - risk_concerns: str (detailed reasoning)
+                - overridden_confidence: float or None (if critic adjusts confidence)
+                - conditions: List[str] (e.g. ["require_tight_sl", "reduce_rr_to_1.5"])
+        """
+        # If NO_TRADE, no review needed
+        if ceo_decision.get("decision") == "NO_TRADE":
+            return {
+                "verdict": "APPROVE",
+                "adjusted_lot_multiplier": 1.0,
+                "risk_concerns": "No trade to review.",
+                "overridden_confidence": None,
+                "conditions": [],
+            }
+
+        if os.getenv("USE_MOCK_AI", "false").lower() == "true":
+            return self._mock_review(ceo_decision, regime, risk_context, recent_performance)
+
+        prompt = f"""You are the RISK CRITIC — the last line of defense before a Gold trade is executed.
+Your job is to find the FLAWS in the CEO's decision. Be adversarial. Be skeptical.
+
+=== CEO DECISION ===
+{json.dumps(ceo_decision, indent=2)}
+
+=== MARKET CONTEXT ===
+Regime: {regime}
+Quant: {json.dumps(quant_analysis, indent=2)}
+News: {json.dumps(news_analysis, indent=2)}
+
+=== RISK STATE ===
+{json.dumps(risk_context, indent=2)}
+
+=== RECENT PERFORMANCE ===
+{json.dumps(recent_performance, indent=2)}
+
+=== PAST LESSONS ===
+{chr(10).join(f"- {l}" for l in (learning_memory or [])[-5:])}
+
+You must evaluate:
+1. Is the SL adequate for the volatility regime?
+2. Is the lot size within safe risk limits?
+3. Does the trade direction align with recent regime win rates?
+4. Is there elevated risk from consecutive losses or daily drawdown?
+5. Are there breaking news risks?
+
+Respond in JSON:
+{{
+    "verdict": "APPROVE" | "VETO" | "DOWNSIZE",
+    "adjusted_lot_multiplier": <float 0.0 to 1.0, 1.0=keep, 0.0=block>,
+    "risk_concerns": "Detailed explanation of risks found, or why approved.",
+    "overridden_confidence": <null or adjusted confidence 0-1>,
+    "conditions": ["list of conditions that must be met for execution"]
+}}
+"""
+        try:
+            result = call_openrouter_api(prompt, model=self.model, max_tokens=2000)
+            # Validate and normalize
+            verdict = result.get("verdict", "APPROVE")
+            if verdict not in ("APPROVE", "VETO", "DOWNSIZE"):
+                verdict = "APPROVE"
+            result["verdict"] = verdict
+            try:
+                result["adjusted_lot_multiplier"] = float(result.get("adjusted_lot_multiplier", 1.0))
+            except (TypeError, ValueError):
+                result["adjusted_lot_multiplier"] = 1.0
+            if result.get("overridden_confidence") is not None:
+                try:
+                    result["overridden_confidence"] = float(result["overridden_confidence"])
+                except (TypeError, ValueError):
+                    result["overridden_confidence"] = None
+            else:
+                result["overridden_confidence"] = None
+            if not isinstance(result.get("conditions"), list):
+                result["conditions"] = []
+            return result
+        except Exception as e:
+            logger.error(f"RiskCriticAgent error: {e}")
+            # Fail-safe: approve with no changes
+            return {
+                "verdict": "APPROVE",
+                "adjusted_lot_multiplier": 1.0,
+                "risk_concerns": f"Critic error (fail-safe approve): {e}",
+                "overridden_confidence": None,
+                "conditions": [],
+            }
+
+    def _mock_review(
+        self,
+        ceo_decision: Dict,
+        regime: str,
+        risk_context: Dict,
+        recent_performance: Dict,
+    ) -> Dict[str, Any]:
+        """Deterministic mock review for backtest mode."""
+        confidence = ceo_decision.get("confidence", 0.5)
+        lot_mult = 1.0
+        conditions = []
+        concerns = []
+
+        # Rule 1: Cooldown is already handled by RiskManager — do NOT VETO here.
+        # (Previously this vetoed on cooldown, double-blocking trades that the
+        # RiskManager had already gated. Now we let the RiskManager own cooldown.)
+
+        # Rule 2: VETO if daily loss limit reached
+        daily_pnl = risk_context.get("daily_pnl", 0.0)
+        daily_limit = risk_context.get("daily_loss_limit", -100.0)
+        if daily_pnl <= daily_limit:
+            return {
+                "verdict": "VETO",
+                "adjusted_lot_multiplier": 0.0,
+                "risk_concerns": f"Daily loss limit hit (${daily_pnl:.2f} <= ${daily_limit:.2f}). Kill switch active.",
+                "overridden_confidence": None,
+                "conditions": ["kill_switch_active"],
+            }
+
+        # Rule 3: DOWNSIZE if consecutive losses >= 3
+        consec_losses = risk_context.get("consecutive_losses", 0)
+        if consec_losses >= 3:
+            lot_mult *= 0.5
+            concerns.append(f"Downsizing 50% due to {consec_losses} consecutive losses.")
+
+        # Rule 4: DOWNSIZE in HIGH_VOLATILITY unless very confident
+        if regime == "HIGH_VOLATILITY" and confidence < 0.90:
+            lot_mult *= 0.7
+            concerns.append("High volatility regime with sub-90% confidence — downsizing 30%.")
+
+        # Rule 5: DOWNSIZE if recent regime winrate is poor
+        regime_wr = recent_performance.get("regime_winrate", 50.0)
+        if regime_wr < 40.0 and regime_wr > 0:
+            lot_mult *= 0.6
+            concerns.append(f"Recent regime win rate is {regime_wr:.0f}% — downsizing 40%.")
+
+        # Rule 6: Require tight SL if recent streak is losing
+        recent_streak = recent_performance.get("recent_streak", "")
+        if "L" in recent_streak and len(recent_streak) >= 2:
+            conditions.append("require_tight_sl")
+            concerns.append("Recent losing streak — require tight SL.")
+
+        verdict = "APPROVE"
+        if lot_mult < 1.0 and lot_mult > 0.0:
+            verdict = "DOWNSIZE"
+        elif lot_mult == 0.0:
+            verdict = "VETO"
+
+        return {
+            "verdict": verdict,
+            "adjusted_lot_multiplier": max(lot_mult, 0.0),
+            "risk_concerns": "; ".join(concerns) if concerns else "Approved — risk within limits.",
+            "overridden_confidence": None,
+            "conditions": conditions,
+        }

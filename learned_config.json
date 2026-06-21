@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "last_updated": "2026-06-14T14:08:33.594812",
+  "total_trades_analyzed": 2,
+  "confidence_threshold": {
+    "TRENDING": 0.78,
+    "RANGING": 0.82,
+    "HIGH_VOLATILITY": 0.85,
+    "LOW_LIQUIDITY": 0.9,
+    "DEFAULT": 0.78
+  },
+  "sl_atr_multiplier": 1.0,
+  "rr_ratio": 3.0,
+  "position_size_pct": {
+    "TRENDING": 6.0,
+    "RANGING": 4.0,
+    "HIGH_VOLATILITY": 3.0,
+    "LOW_LIQUIDITY": 2.0,
+    "DEFAULT": 5.0
+  },
+  "session_multiplier": {
+    "TOKYO_LONDON": 1.0,
+    "LONDON": 1.0,
+    "NY": 1.0,
+    "NY_LATE": 0.7,
+    "ASIA": 0.5
+  },
+  "fibo_zone_bias": {
+    "equilibrium": 1.0,
+    "discount_premium": 1.2,
+    "all_in_market_maker": 1.5,
+    "neutral": 0.8
+  },
+  "overall_winrate": 50.0,
+  "consecutive_losses": 0
+}

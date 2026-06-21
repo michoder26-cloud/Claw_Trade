@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Sniper HQ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #0a0a0f;
+  --bg2: #111118;
+  --card: #16161f;
+  --card-hover: #1c1c28;
+  --border: #2a2a3a;
+  --border-light: #1e1e2e;
+  --text: #e8e8f0;
+  --text2: #9898b0;
+  --text3: #5a5a78;
+  --green: #00e676;
+  --green-dim: #00e67620;
+  --red: #ff5252;
+  --red-dim: #ff525220;
+  --gold: #ffd700;
+  --gold-dim: #ffd70020;
+  --blue: #448aff;
+  --blue-dim: #448aff20;
+  --purple: #b388ff;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; min-height: 100vh; overflow-x: hidden; }
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* TOP BAR */
+.topbar {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  backdrop-filter: blur(20px);
+}
+.topbar-left { display: flex; align-items: center; gap: 16px; }
+.logo {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffd700, #ff8f00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.logo-sub { font-size: 10px; color: var(--text3); font-weight: 500; letter-spacing: 2px; text-transform: uppercase; }
+.topbar-center { display: flex; gap: 8px; }
+.tab-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:hover { background: var(--card); color: var(--text); }
+.tab-btn.active { background: var(--gold-dim); color: var(--gold); }
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s infinite;
+}
+.status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.status-text { font-size: 12px; color: var(--text2); font-weight: 500; }
+.clock { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text2); font-weight: 500; }
+
+/* MAIN */
+.main { flex: 1; padding: 24px; max-width: 1600px; margin: 0 auto; width: 100%; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* METRICS */
+.metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.metric-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.metric-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.metric-card.gold::before { background: linear-gradient(90deg, #ffd700, #ff8f00); }
+.metric-card.green::before { background: linear-gradient(90deg, #00e676, #00c853); }
+.metric-card.red::before { background: linear-gradient(90deg, #ff5252, #d32f2f); }
+.metric-card.blue::before { background: var(--blue); }
+.metric-card.purple::before { background: var(--purple); }
+.metric-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.metric-label { font-size: 11px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.metric-value { font-size: 28px; font-weight: 800; letter-spacing: -1px; line-height: 1; margin-bottom: 4px; }
+.metric-value.positive { color: var(--green); }
+.metric-value.negative { color: var(--red); }
+.metric-value.gold { color: var(--gold); }
+.metric-sub { font-size: 12px; color: var(--text3); font-weight: 500; }
+
+/* CHARTS */
+.charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.chart-title { font-size: 14px; font-weight: 700; }
+.chart-subtitle { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.chart-container { position: relative; height: 280px; }
+.chart-container.small { height: 200px; }
+
+/* BOTTOM */
+.bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* TABLE */
+.trade-table { width: 100%; border-collapse: collapse; }
+.th { font-size: 10px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.td { font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border-light); font-weight: 500; }
+.tr:hover { background: var(--card-hover); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.badge.tp { background: var(--green-dim); color: var(--green); }
+.badge.sl { background: var(--red-dim); color: var(--red); }
+.badge.be { background: var(--blue-dim); color: var(--blue); }
+.badge.buy { background: var(--green-dim); color: var(--green); }
+.badge.sell { background: var(--red-dim); color: var(--red); }
+
+/* TICKER */
+.live-ticker {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.ticker-label { font-size: 10px; color: var(--text3); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }
+.ticker-price { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; color: var(--gold); }
+.ticker-change { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+.ticker-change.up { color: var(--green); }
+.ticker-change.down { color: var(--red); }
+.ticker-info { display: flex; flex-direction: column; gap: 2px; }
+.ticker-info-label { font-size: 9px; color: var(--text3); text-transform: uppercase; }
+.ticker-info-value { font-size: 12px; font-weight: 600; color: var(--text2); }
+
+/* REGIME */
+.regime-bar { display: flex; gap: 8px; margin-bottom: 24px; }
+.regime-segment { flex: 1; padding: 12px; border-radius: var(--radius-sm); background: var(--card); border: 1px solid var(--border); text-align: center; transition: all 0.3s; }
+.regime-segment.active { border-color: var(--gold); background: var(--gold-dim); }
+.regime-name { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+.regime-desc { font-size: 9px; color: var(--text3); }
+
+/* LOADING */
+.loading { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--text3); font-size: 13px; }
+.loading::after { content: ''; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 10px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* RESPONSIVE */
+@media (max-width: 1200px) { .charts-row { grid-template-columns: 1fr; } .bottom-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } .topbar-center { display: none; } .live-ticker { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div>
+        <div class="logo">GOLD SNIPER HQ</div>
+        <div class="logo-sub">Trading Command Center</div>
+      </div>
+    </div>
+    <div class="topbar-center">
+      <button class="tab-btn active" onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+      <button class="tab-btn" onclick="switchTab('trades', this)">📋 Trades</button>
+    </div>
+    <div class="topbar-right">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Connecting...</span>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="live-ticker">
+        <div class="ticker-label">XAU/USD</div>
+        <div class="ticker-price" id="livePrice">--</div>
+        <div class="ticker-change" id="liveChange">--</div>
+        <div style="flex:1"></div>
+        <div class="ticker-info"><span class="ticker-info-label">Regime</span><span class="ticker-info-value" id="liveRegime">--</span></div>
+        <div class="ticker-info"><span class="ticker-info-label">Session</span><span class="ticker-info-value" id="liveSession">--</span></div>
+        <div class="ticker-info"><span class="ticker-info-label">Spread</span><span class="ticker-info-value" id="liveSpread">--</span></div>
+      </div>
+
+      <div class="regime-bar">
+        <div class="regime-segment" id="regime-trending"><div class="regime-name">📈 TRENDING</div><div class="regime-desc">High momentum</div></div>
+        <div class="regime-segment" id="regime-ranging"><div class="regime-name">📊 RANGING</div><div class="regime-desc">Consolidation</div></div>
+        <div class="regime-segment" id="regime-volatile"><div class="regime-name">⚡ VOLATILE</div><div class="regime-desc">High volatility</div></div>
+        <div class="regime-segment" id="regime-lowliq"><div class="regime-name">🌙 LOW LIQUIDITY</div><div class="regime-desc">Quiet market</div></div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card gold">
+          <div class="metric-label">Total P&L</div>
+          <div class="metric-value" id="metricPnl">$0.00</div>
+          <div class="metric-sub" id="metricPnlPct">0.00%</div>
+        </div>
+        <div class="metric-card blue">
+          <div class="metric-label">Win Rate</div>
+          <div class="metric-value" id="metricWr">0%</div>
+          <div class="metric-sub" id="metricWrDetail">0W / 0L</div>
+        </div>
+        <div class="metric-card green">
+          <div class="metric-label">Total Trades</div>
+          <div class="metric-value" id="metricTrades">0</div>
+          <div class="metric-sub" id="metricTradesDetail">0 breakeven</div>
+        </div>
+        <div class="metric-card purple">
+          <div class="metric-label">Avg R:R</div>
+          <div class="metric-value" id="metricRr">0.0R</div>
+          <div class="metric-sub">Risk/Reward ratio</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Balance</div>
+          <div class="metric-value gold" id="metricBalance">$0.00</div>
+          <div class="metric-sub">Demo Account</div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-header"><div><div class="chart-title">Equity Curve</div><div class="chart-subtitle">Account growth over time</div></div></div>
+          <div class="chart-container"><canvas id="equityChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><div><div class="chart-title">Win Rate by Regime</div><div class="chart-subtitle">Performance breakdown</div></div></div>
+          <div class="chart-container small"><canvas id="regimeChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="bottom-grid">
+        <div class="chart-card">
+          <div class="chart-header"><div><div class="chart-title">Monthly P&L</div><div class="chart-subtitle">Last 12 months</div></div></div>
+          <div class="chart-container small"><canvas id="monthlyChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header"><div><div class="chart-title">Recent Trades</div><div class="chart-subtitle">Last 10 closed</div></div></div>
+          <div style="overflow-x:auto">
+            <table class="trade-table">
+              <thead><tr><th class="th">Time</th><th class="th">Signal</th><th class="th">Entry</th><th class="th">Exit</th><th class="th">P&L</th><th class="th">Result</th></tr></thead>
+              <tbody id="recentTradesBody"><tr><td colspan="6" class="loading">Loading</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRADES -->
+    <div class="page" id="page-trades">
+      <div class="chart-card">
+        <div class="chart-header"><div><div class="chart-title">Trade History</div><div class="chart-subtitle">All closed trades</div></div></div>
+        <div style="overflow-x:auto; max-height:600px; overflow-y:auto">
+          <table class="trade-table">
+            <thead style="position:sticky;top:0;background:var(--card)">
+              <tr>
+                <th class="th">Date</th><th class="th">Signal</th><th class="th">Entry</th><th class="th">Exit</th>
+                <th class="th">P&L</th><th class="th">R:R</th><th class="th">Regime</th><th class="th">Conf</th><th class="th">Result</th>
+              </tr>
+            </thead>
+            <tbody id="allTradesBody"><tr><td colspan="9" class="loading">Loading</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let equityChart, regimeChart, monthlyChart;
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString('th-TH', {hour12:false});
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.getElementById('page-' + tab).classList.add('active');
+}
+
+async function fetchJSON(url) {
+  try { const r = await fetch(url); return await r.json(); } catch(e) { return null; }
+}
+
+async function updateDashboard() {
+  const [overview, chart] = await Promise.all([fetchJSON('/api/overview'), fetchJSON('/api/chart')]);
+  if (!overview || overview.status !== 'ok') {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusText').textContent = 'Offline';
+    return;
+  }
+  document.getElementById('statusDot').className = 'status-dot';
+  document.getElementById('statusText').textContent = 'Live';
+
+  const pnl = overview.total_pnl || 0;
+  const pnlEl = document.getElementById('metricPnl');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+  pnlEl.className = 'metric-value ' + (pnl >= 0 ? 'positive' : 'negative');
+  document.getElementById('metricPnlPct').textContent = (chart ? chart.total_growth.toFixed(2) : '0') + '%';
+  document.getElementById('metricWr').textContent = overview.winrate + '%';
+  document.getElementById('metricWrDetail').textContent = overview.wins + 'W / ' + overview.losses + 'L';
+  document.getElementById('metricTrades').textContent = overview.total_trades;
+  document.getElementById('metricTradesDetail').textContent = (overview.breakevens || 0) + ' breakeven';
+  document.getElementById('metricRr').textContent = overview.avg_r + 'R';
+  document.getElementById('metricBalance').textContent = '$' + (chart ? chart.current_balance.toFixed(2) : '0.00');
+
+  // Recent trades
+  const tbody = document.getElementById('recentTradesBody');
+  if (overview.recent_trades && overview.recent_trades.length > 0) {
+    tbody.innerHTML = overview.recent_trades.map(t => `
+      <tr class="tr">
+        <td class="td">${t.time}</td>
+        <td class="td"><span class="badge ${t.signal === 'BUY' ? 'buy' : 'sell'}">${t.signal}</span></td>
+        <td class="td">${t.entry}</td>
+        <td class="td">${t.exit}</td>
+        <td class="td" style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${t.pnl >= 0 ? '+' : ''}$${t.pnl}</td>
+        <td class="td"><span class="badge ${t.result === 'TP' ? 'tp' : t.result === 'SL' ? 'sl' : 'be'}">${t.result}</span></td>
+      </tr>
+    `).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="6" class="td" style="text-align:center;color:var(--text3)">No trades yet</td></tr>';
+  }
+
+  // All trades
+  const allBody = document.getElementById('allTradesBody');
+  if (overview.recent_trades && overview.recent_trades.length > 0) {
+    allBody.innerHTML = overview.recent_trades.map(t => `
+      <tr class="tr">
+        <td class="td">${t.time}</td>
+        <td class="td"><span class="badge ${t.signal === 'BUY' ? 'buy' : 'sell'}">${t.signal}</span></td>
+        <td class="td">${t.entry}</td>
+        <td class="td">${t.exit}</td>
+        <td class="td" style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${t.pnl >= 0 ? '+' : ''}$${t.pnl}</td>
+        <td class="td">${t.r || 0}R</td>
+        <td class="td">${t.regime || '--'}</td>
+        <td class="td">${t.confidence || 0}%</td>
+        <td class="td"><span class="badge ${t.result === 'TP' ? 'tp' : t.result === 'SL' ? 'sl' : 'be'}">${t.result}</span></td>
+      </tr>
+    `).join('');
+  }
+
+  updateCharts(overview, chart);
+}
+
+function updateCharts(overview, chartData) {
+  if (typeof Chart === 'undefined') return;
+
+  if (chartData && chartData.equity_curve && chartData.equity_curve.length > 0) {
+    const labels = chartData.equity_curve.map(e => e.date);
+    const data = chartData.equity_curve.map(e => e.balance);
+    if (equityChart) equityChart.destroy();
+    const ctx = document.getElementById('equityChart').getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+    gradient.addColorStop(0, 'rgba(255,215,0,0.3)');
+    gradient.addColorStop(1, 'rgba(255,215,0,0)');
+    equityChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets: [{ data, borderColor: '#ffd700', backgroundColor: gradient, fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#2a2a3a' }, ticks: { color: '#5a5a78', maxTicksLimit: 8 } }, y: { grid: { color: '#2a2a3a' }, ticks: { color: '#5a5a78', callback: v => '$' + v.toLocaleString() } } }
+    });
+  }
+
+  if (overview.by_regime && overview.by_regime.length > 0) {
+    if (regimeChart) regimeChart.destroy();
+    regimeChart = new Chart(document.getElementById('regimeChart'), {
+      type: 'doughnut',
+      data: { labels: overview.by_regime.map(r => r.regime), datasets: [{ data: overview.by_regime.map(r => r.total), backgroundColor: ['#ffd700', '#448aff', '#00e676', '#ff5252', '#b388ff'], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#9898b0', font: { size: 10 }, padding: 8 } } }, cutout: '65%' }
+    });
+  }
+
+  if (overview.monthly && overview.monthly.length > 0) {
+    if (monthlyChart) monthlyChart.destroy();
+    const months = [...overview.monthly].reverse();
+    monthlyChart = new Chart(document.getElementById('monthlyChart'), {
+      type: 'bar',
+      data: { labels: months.map(m => m.month.slice(5)), datasets: [{ data: months.map(m => m.pnl), backgroundColor: months.map(m => m.pnl >= 0 ? '#00e67640' : '#ff525240'), borderColor: months.map(m => m.pnl >= 0 ? '#00e676' : '#ff5252'), borderWidth: 1, borderRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { color: '#5a5a78', font: { size: 10 } } }, y: { grid: { color: '#2a2a3a' }, ticks: { color: '#5a5a78', callback: v => '$' + v } } }
+    });
+  }
+}
+
+async function updateLiveTicker() {
+  try {
+    const d = await (await fetch('/api/live-price')).json();
+    if (d.price) {
+      document.getElementById('livePrice').textContent = d.price.toFixed(2);
+      const ch = d.change || 0;
+      const chEl = document.getElementById('liveChange');
+      chEl.textContent = (ch >= 0 ? '▲ +' : '▼ ') + ch.toFixed(2);
+      chEl.className = 'ticker-change ' + (ch >= 0 ? 'up' : 'down');
+      document.getElementById('liveRegime').textContent = d.regime || '--';
+      document.getElementById('liveSession').textContent = d.session || '--';
+      document.getElementById('liveSpread').textContent = d.spread ? d.spread.toFixed(1) + ' pip' : '--';
+    }
+  } catch(e) {}
+}
+
+updateDashboard();
+setInterval(updateDashboard, 15000);
+setInterval(updateLiveTicker, 5000);
+
+</script>
+</body>
+</html>

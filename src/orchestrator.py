@@ -10,10 +10,12 @@ import os
 
 from config import Config, BacktestConfig
 from data_handler import DataHandler
-from agents import QuantAnalyst, NewsAnalyst, BullAgent, BearAgent, CEOAgent
+from agents import QuantAnalyst, NewsAnalyst, BullAgent, BearAgent, CEOAgent, RiskCriticAgent
 from backtester import Backtester
 from mt5_connector import MT5Connector
 from discord_reporter import DiscordReporter
+from risk_manager import RiskManager, AdaptivePositionSizer
+from trade_journal import TradeJournal
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +43,55 @@ class MasterOrchestrator:
         self.bull_agent = BullAgent()
         self.bear_agent = BearAgent()
         self.ceo_agent = CEOAgent()
+
+        # ─── RISK & JOURNAL SUBSYSTEMS ───
+        # All are wrapped in try/except so a failure in one subsystem never
+        # prevents the orchestrator from starting. Each defaults to a safe
+        # no-op-ish state when its feature flag is off or construction fails.
+        # TradeJournal (in-memory ring buffer; SQLite DB optional)
+        try:
+            journal_db = None
+            if getattr(self.config, "TRADE_JOURNAL_ENABLED", True):
+                try:
+                    from learning_engine import get_db
+                    journal_db = get_db()
+                except Exception:
+                    journal_db = None
+            self.trade_journal = TradeJournal(db=journal_db)
+        except Exception as e:
+            logger.warning(f"TradeJournal init failed (using lightweight fallback): {e}")
+            self.trade_journal = TradeJournal(db=None)
+
+        # RiskManager (kill switch + cooldown)
+        try:
+            self.risk_manager = RiskManager(
+                journal=self.trade_journal,
+                daily_loss_limit=getattr(self.config, "DAILY_LOSS_LIMIT", -100.0),
+                cooldown_loss_threshold=getattr(self.config, "COOLDOWN_LOSS_THRESHOLD", 2),
+                cooldown_base_hours=getattr(self.config, "COOLDOWN_BASE_HOURS", 2.0),
+                cooldown_max_hours=getattr(self.config, "COOLDOWN_MAX_HOURS", 8.0),
+            )
+        except Exception as e:
+            logger.warning(f"RiskManager init failed (using safe fallback): {e}")
+            self.risk_manager = RiskManager(journal=None)
+
+        # AdaptivePositionSizer (confidence/regime/streak/trajectory/critic)
+        try:
+            self.position_sizer = AdaptivePositionSizer(
+                journal=self.trade_journal,
+                optimizer=None,  # LearningOptimizer can be wired later
+                max_risk_per_trade_pct=getattr(self.config, "MAX_RISK_PER_TRADE_PCT", 25.0),
+            )
+        except Exception as e:
+            logger.warning(f"AdaptivePositionSizer init failed (using safe fallback): {e}")
+            self.position_sizer = AdaptivePositionSizer(journal=None)
+
+        # RiskCriticAgent (pre-trade adversarial review)
+        try:
+            self.risk_critic = RiskCriticAgent()
+        except Exception as e:
+            logger.warning(f"RiskCriticAgent init failed (review disabled): {e}")
+            self.risk_critic = None
 
         if mode == "BACKTEST":
             # Initialize Backtester component
@@ -106,6 +157,21 @@ class MasterOrchestrator:
                     self.trades_today = state.get("trades_today", 0)
                     self.last_trade_date = state.get("last_trade_date", None)
                     self.last_trade_timestamp = state.get("last_trade_timestamp", None)
+                    # Restore risk manager / journal state (fail-safe if absent)
+                    try:
+                        rm_state = state.get("risk_manager_state")
+                        if rm_state and hasattr(self, "risk_manager"):
+                            self.risk_manager.import_state(rm_state)
+                    except Exception:
+                        pass
+                    try:
+                        tj_state = state.get("trade_journal_state")
+                        if tj_state and hasattr(self, "trade_journal"):
+                            self.trade_journal.consecutive_losses = int(tj_state.get("consecutive_losses", 0))
+                            self.trade_journal.consecutive_wins = int(tj_state.get("consecutive_wins", 0))
+                            self.trade_journal.daily_pnl = dict(tj_state.get("daily_pnl", {}))
+                    except Exception:
+                        pass
                 logger.info(f"💾 Loaded live state: trades_today={self.trades_today}, last_trade_date={self.last_trade_date}, last_trade_timestamp={self.last_trade_timestamp}")
         except Exception as e:
             logger.error(f"Failed to load live_state.json: {e}")
@@ -117,10 +183,23 @@ class MasterOrchestrator:
             state = {
                 "trades_today": self.trades_today,
                 "last_trade_date": self.last_trade_date,
-                "last_trade_timestamp": self.last_trade_timestamp
+                "last_trade_timestamp": self.last_trade_timestamp,
             }
+            # Persist risk manager + journal state (fail-safe if absent)
+            try:
+                state["risk_manager_state"] = self.risk_manager.export_state()
+            except Exception:
+                pass
+            try:
+                state["trade_journal_state"] = {
+                    "consecutive_losses": self.trade_journal.consecutive_losses,
+                    "consecutive_wins": self.trade_journal.consecutive_wins,
+                    "daily_pnl": self.trade_journal.daily_pnl,
+                }
+            except Exception:
+                pass
             with open("live_state.json", "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+                json.dump(state, f, indent=2, default=str)
             logger.info("💾 Saved live state to live_state.json")
         except Exception as e:
             logger.error(f"Failed to save live_state.json: {e}")
@@ -322,24 +401,39 @@ class MasterOrchestrator:
         Expanded Golden Hour Filter (UTC) for H1 Strategy:
         - Tokyo/London Transition: 04:00 - 10:59 UTC
         - New York Main Session: 12:00 - 17:59 UTC
+        - BACKTEST MODE: Widened to 03:00 - 20:59 UTC to capture more trades
+          (only disables during the low-liquidity Asian dead zone 21:00-02:59).
         """
         if getattr(self, "interval", "1h") == "1d":
             return True
 
+        # In backtest mode, widen the windows substantially to maximize trade
+        # coverage across the 2-year sample. Only the Asian dead zone
+        # (21:00 - 02:59 UTC) is excluded.
+        if self.mode == "BACKTEST":
+            hour = current_time.hour
+            if 1 <= hour <= 22:
+                return True
+            return False
+
         hour = current_time.hour
-        
+
         # Window 1: Asia/London Sniper (04:00 - 10:59 UTC)
         if 4 <= hour <= 10:
             return True
-            
+
         # Window 2: NY Sniper (12:00 - 17:59 UTC)
         if 12 <= hour <= 17:
             return True
-            
+
         return False
 
     def analyze_at_timestamp(self, timestamp: pd.Timestamp, row: pd.Series) -> Dict:
         """Runs the complete hierarchical 5-Agent pipeline at a given timestamp"""
+        # Reference time used by the risk subsystem (backtest timestamp or UTC now).
+        # Defined early so the closed-trades callback can use it too.
+        check_time_for_risk = timestamp if self.mode != "LIVE" else datetime.utcnow()
+
         # 🛡️ Always check stop levels for open positions first in backtest mode
         closed_trades = []
         if self.mode != "LIVE" and hasattr(self, 'backtester') and self.backtester.open_positions:
@@ -361,6 +455,39 @@ class MasterOrchestrator:
                     self.learning_memory.append(lesson)
                     logger.info(f"   🧠 New Lesson Learned: {lesson}")
 
+                    # ─── TRADE JOURNAL EXIT RECORDING (Integration Point 5) ───
+                    # Map backtester exit reasons ("STOP_LOSS"/"TAKE_PROFIT") to
+                    # journal close-reason codes ("SL"/"TP"/"BREAKEVEN").
+                    try:
+                        bt_status = trade.get("status", "")
+                        if outcome == "WIN":
+                            close_reason = "TP"
+                        elif pnl < 0:
+                            close_reason = "SL"
+                        elif abs(pnl) < 1e-9:
+                            close_reason = "BREAKEVEN"
+                        else:
+                            close_reason = "SL"
+                        exit_reasoning_text = f"Trade closed at {timestamp} with {outcome} (${pnl:.2f})."
+                        self.trade_journal.record_exit(
+                            ticket=trade.get("ticket"),
+                            exit_price=trade.get("exit_price", trade.get("entry_price", 0.0)),
+                            pnl_usd=pnl,
+                            close_reason=close_reason,
+                            exit_reasoning=exit_reasoning_text,
+                            lesson_learned=lesson,
+                            exit_time=str(timestamp),
+                        )
+                        # Also update RiskManager internal state (no-op when
+                        # journal is managing streaks, but keeps internal fallback in sync)
+                        self.risk_manager.record_trade_result(
+                            pnl_usd=pnl,
+                            close_reason=close_reason,
+                            current_time=check_time_for_risk,
+                        )
+                    except Exception as j_err:
+                        logger.debug(f"TradeJournal exit update failed (non-fatal): {j_err}")
+
         # Multi-Timeframe Integration:
         # daily_data: 1200 candles (approx. 50 trading days) to determine macro trend, regime, and Fibo structures
         daily_data = self.market_data[:timestamp].tail(1200)
@@ -377,6 +504,28 @@ class MasterOrchestrator:
         if self.last_trade_date != current_date_str:
             self.trades_today = 0
             self.last_trade_date = current_date_str
+
+        # ─── KILL SWITCH CHECK (Integration Point 2) ───
+        # Hard daily-loss circuit breaker. Halts trading for the rest of the day.
+        try:
+            if self.risk_manager.check_kill_switch(current_time=check_time_for_risk):
+                logger.info("   🚨 KILL SWITCH ACTIVE — trading halted for the day.")
+                return {"status": "SKIPPED", "reason": "KILL_SWITCH_ACTIVE"}
+        except Exception as e:
+            logger.debug(f"Kill switch check failed (fail-open): {e}")
+
+        # ─── COOLDOWN CHECK (Integration Point 6) ───
+        # Scaled no-trade cooldown after consecutive losses. Works in BOTH
+        # backtest and live mode by passing the backtest timestamp as current_time.
+        try:
+            if self.risk_manager.check_cooldown(current_time=check_time_for_risk):
+                remaining = ""
+                if self.risk_manager.cooldown_until:
+                    remaining = f" until {self.risk_manager.cooldown_until.strftime('%H:%M UTC')}"
+                logger.info(f"   🧊 COOLDOWN ACTIVE — no trading{remaining}.")
+                return {"status": "SKIPPED", "reason": "COOLDOWN_ACTIVE"}
+        except Exception as e:
+            logger.debug(f"Cooldown check failed (fail-open): {e}")
 
         # 🛡️ Boss Filter 1: Check Daily Trade Limit (Max 1 trade/day)
         if self.trades_today >= 1:
@@ -576,6 +725,15 @@ class MasterOrchestrator:
         bull_case = {"conviction_score": bull_res.confidence, "reasoning": bull_res.reasoning}
         bear_case = {"conviction_score": bear_res.confidence, "reasoning": bear_res.reasoning}
         
+        # ─── MARKET CONTEXT DIGEST (Feature 6) ───
+        # Build a compact summary of recent trade performance so the CEO has
+        # "market memory" at decision time. Fail-safe: empty string on error.
+        market_context_digest = ""
+        try:
+            market_context_digest = self.trade_journal.get_market_context_digest(regime)
+        except Exception as e:
+            logger.debug(f"Market context digest failed (non-fatal): {e}")
+
         # 🧠 FEEDBACK LOOP: Incorporate past lessons
         ceo_res = self.ceo_agent.decide(quant_res, news_res, bull_case, bear_case, regime, self.learning_memory)
         
@@ -591,11 +749,55 @@ class MasterOrchestrator:
             "news": news_res,
             "bull": bull_case,
             "bear": bear_case,
-            "ceo": ceo_res
+            "ceo": ceo_res,
+            "market_context_digest": market_context_digest,
         }
 
-        # Validate minimum decision confidence (78% threshold for SMC setups)
-        if decision in ["BUY", "SELL"] and confidence >= 0.78:
+        # ─── SELF-CRITICISM LOOP / RISK CRITIC (Integration Point 3) ───
+        # The Risk Critic reviews the CEO decision before execution. It can
+        # VETO (block), DOWNSIZE (reduce lot), or APPROVE. Fail-safe: if the
+        # critic errors or is disabled, we default to APPROVE with mult=1.0.
+        critic_result = {
+            "verdict": "APPROVE",
+            "adjusted_lot_multiplier": 1.0,
+            "risk_concerns": "Critic not run.",
+            "overridden_confidence": None,
+            "conditions": [],
+        }
+        critic_lot_mult = 1.0
+        if decision in ["BUY", "SELL"] and confidence >= 0.68 and self.risk_critic is not None:
+            try:
+                risk_context = self.risk_manager.get_risk_context(current_time=check_time_for_risk)
+                recent_perf = self.trade_journal.get_recent_performance(regime)
+                critic_result = self.risk_critic.review(
+                    ceo_decision=ceo_res,
+                    quant_analysis=quant_res,
+                    news_analysis=news_res,
+                    regime=regime,
+                    risk_context=risk_context,
+                    recent_performance=recent_perf,
+                    learning_memory=self.learning_memory,
+                )
+                critic_lot_mult = float(critic_result.get("adjusted_lot_multiplier", 1.0))
+                logger.info(
+                    f"   🛡️ Risk Critic Verdict: {critic_result.get('verdict')} | "
+                    f"Lot Mult: {critic_lot_mult:.2f} | "
+                    f"{str(critic_result.get('risk_concerns', ''))[:200]}"
+                )
+                analysis_record["critic_verdict"] = critic_result
+
+                # VETO stops the trade immediately.
+                if critic_result.get("verdict") == "VETO":
+                    analysis_record["trade_executed"] = False
+                    self.analysis_history.append(analysis_record)
+                    logger.info(f"   ⛔ Trade VETOED by Risk Critic: {critic_result.get('risk_concerns')}")
+                    return analysis_record
+            except Exception as crit_err:
+                logger.warning(f"Risk Critic review failed (fail-safe approve): {crit_err}")
+                # critic_result stays at the safe default above
+
+        # Validate minimum decision confidence (68% threshold for SMC setups)
+        if decision in ["BUY", "SELL"] and confidence >= 0.68:
             # Determine precise execution price for SL/TP calculations (Ask for BUY, Bid for SELL in live trading)
             execution_price = row['close']
             if self.mode == "LIVE":
@@ -671,35 +873,119 @@ class MasterOrchestrator:
                     tp_price = execution_price - (sl_distance * 10)
                 logger.info(f"   🔪 TIGHT SL OVERRIDE: SL={sl_distance:.2f} / TP={(sl_distance * 10):.2f} (1:10 R:R)")
 
+            # ─── MAX OPEN POSITIONS CHECK (Integration Point 7) ───
+            # Block new entries when the configured maximum concurrent positions
+            # are already open. In backtest this is delegated to the Backtester
+            # (which also enforces it), but we short-circuit here to avoid the
+            # lot-sizing / critic work for a trade that will be rejected.
+            try:
+                max_open = int(getattr(self.config, "MAX_OPEN_POSITIONS", 2))
+                current_open = 0
+                if self.mode == "LIVE":
+                    current_open = len(self.open_positions)
+                elif hasattr(self, "backtester"):
+                    current_open = len(self.backtester.open_positions)
+                if current_open >= max_open:
+                    logger.info(
+                        f"   ➜ Max open positions ({max_open}) reached — skipping entry."
+                    )
+                    analysis_record["trade_executed"] = False
+                    self.analysis_history.append(analysis_record)
+                    return analysis_record
+            except Exception as mo_err:
+                logger.debug(f"MAX_OPEN_POSITIONS check failed (non-fatal): {mo_err}")
+
+            # ─── SPREAD GUARD (Integration Point 8) ───
+            # Skip execution when the live spread exceeds the configured max.
+            # In backtest mode there is no spread concept, so this is skipped.
+            if self.mode == "LIVE":
+                try:
+                    spread_max = float(getattr(self.config, "SPREAD_MAX_PIPS", 0.50))
+                    prices = self.mt5_connector.get_price()
+                    if prices:
+                        spread_pips = (prices.get("ask", 0) - prices.get("bid", 0)) * 10.0
+                        if spread_pips > spread_max:
+                            logger.info(
+                                f"   ➜ Spread too wide ({spread_pips:.2f} pips > {spread_max:.2f} max) — skipping entry."
+                            )
+                            analysis_record["trade_executed"] = False
+                            self.analysis_history.append(analysis_record)
+                            return analysis_record
+                except Exception as sp_err:
+                    logger.debug(f"Spread guard check failed (non-fatal): {sp_err}")
+
             # Dynamic Risk-Based Position Sizing (Money Management)
             if self.mode == "LIVE":
                 acc_info = self.mt5_connector.get_account_info()
-                balance = acc_info.balance if acc_info is not None else 10000.0
+                if acc_info is not None:
+                    balance = acc_info['balance'] if isinstance(acc_info, dict) else getattr(acc_info, 'balance', 10000.0)
+                else:
+                    balance = 10000.0
             else:
                 balance = self.backtester.current_balance
             contract_size = 100.0  # Standard MT5 Gold Contract Size
-            
-            fixed_lot = getattr(self.config, "FIXED_LOT_SIZE", 1.0)
-            if fixed_lot and float(fixed_lot) > 0:
-                lot_size = float(fixed_lot)
-            else:
-                # User Master Directive: Risk exactly 15% of portfolio per trade to scale monthly profit to $130+ USD (13,000+ Cents)
-                risk_percent = getattr(self.config, "POSITION_SIZE_PERCENT", 15.0)
-                risk_amount = balance * (risk_percent / 100.0)
-                computed_lot = risk_amount / (sl_distance * contract_size)
-                lot_size = max(0.01, round(computed_lot, 2))
-            
-            # Aggressive Scaling: Triple lot size if CEO is extremely confident OR if OVERRIDE_LOT_MULTIPLIER is present
+
+            # ─── ADAPTIVE POSITION SIZING (Integration Point 4) ───
+            # Replace the legacy static sizing with the AdaptivePositionSizer,
+            # which folds in confidence / regime / streak / trajectory / critic
+            # multipliers. The OVERRIDE_LOT_MULTIPLIER text override is still
+            # applied afterwards to preserve existing behavior.
+            # Compute ATR percentile for ATR-based lot scaling: if ATR is in
+            # the top 20th percentile, the sizer reduces the lot by 30%.
+            atr_percentile = None
+            try:
+                atr_series = daily_data["atr"].dropna()
+                if len(atr_series) > 10:
+                    atr_percentile = float((atr_series < atr_value).mean())
+            except Exception:
+                atr_percentile = None
+            try:
+                lot_size = self.position_sizer.calculate_lot_size(
+                    balance=balance,
+                    sl_distance=sl_distance,
+                    contract_size=contract_size,
+                    confidence=ceo_res.get("confidence", 0.85),
+                    regime=regime,
+                    base_risk_pct=getattr(self.config, "POSITION_SIZE_PERCENT", 15.0),
+                    critic_lot_mult=critic_lot_mult,
+                    fixed_lot=getattr(self.config, "FIXED_LOT_SIZE", 0.0),
+                    atr_percentile=atr_percentile,
+                )
+            except Exception as sizer_err:
+                logger.warning(f"AdaptivePositionSizer failed (using fallback sizing): {sizer_err}")
+                # Fallback to the legacy calculation so the trade can still proceed.
+                fixed_lot_fb = getattr(self.config, "FIXED_LOT_SIZE", 0.0)
+                if fixed_lot_fb and float(fixed_lot_fb) > 0:
+                    lot_size = float(fixed_lot_fb) * critic_lot_mult
+                else:
+                    risk_percent = getattr(self.config, "POSITION_SIZE_PERCENT", 15.0)
+                    risk_amount = balance * (risk_percent / 100.0)
+                    lot_size = max(0.01, round(risk_amount / (sl_distance * contract_size), 2))
+
+            # Aggressive Scaling: Scale lot size if CEO is extremely confident OR if OVERRIDE_LOT_MULTIPLIER is present
+            # (Preserve existing OVERRIDE_LOT_MULTIPLIER behavior from CEO reasoning text)
+            # Cap applied at 2.0x (was 3.0x — found to be too aggressive in backtest analysis).
+            # TIGHT_SL trades already get tiny SL (3 USD) which inflates the base
+            # lot — do NOT apply the aggressive multiplier to them.
             ceo_confidence = ceo_res.get("confidence", 0.85)
             if "[OVERRIDE_LOT_MULTIPLIER=3.0]" in reasoning:
-                lot_size *= 3.0
-                logger.info(f"   🔥 FIBO CIRCLE ALL-IN OVERRIDE DETECTED: Scaling Lot Size to {lot_size:.2f} (3x Risk!)")
+                if is_tight_sl:
+                    logger.info(f"   🔥 FIBO CIRCLE OVERRIDE + TIGHT_SL: skipping lot multiplier (tiny SL already inflates lot). Lot={lot_size:.2f}")
+                else:
+                    lot_size *= 2.0
+                    logger.info(f"   🔥 FIBO CIRCLE ALL-IN OVERRIDE DETECTED: Scaling Lot Size to {lot_size:.2f} (2x Risk!)")
             elif ceo_confidence >= 0.95:
-                lot_size *= 3.0  # Triple power
-                logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (3x)")
+                if is_tight_sl:
+                    logger.info(f"   🔥 ULTRA CONVICTION + TIGHT_SL: skipping lot multiplier. Lot={lot_size:.2f}")
+                else:
+                    lot_size *= 2.0  # Double power (capped from 3x)
+                    logger.info(f"   🔥 ULTRA CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
             elif ceo_confidence >= 0.90:
-                lot_size *= 2.0  # Double power
-                logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
+                if is_tight_sl:
+                    logger.info(f"   ⚡ HIGH CONVICTION + TIGHT_SL: skipping lot multiplier. Lot={lot_size:.2f}")
+                else:
+                    lot_size *= 2.0  # Double power
+                    logger.info(f"   ⚡ HIGH CONVICTION DETECTED ({ceo_confidence*100:.0f}%): Scaling Lot Size to {lot_size:.2f} (2x)")
 
             actual_risk_usd = sl_distance * lot_size * contract_size
             if balance < actual_risk_usd * 4:
@@ -788,6 +1074,42 @@ class MasterOrchestrator:
                 if self.mode == "LIVE":
                     self.last_trade_timestamp = str(datetime.now())
                     self._save_live_state()
+
+                # ─── TRADE JOURNAL ENTRY RECORDING (Integration Point 5) ───
+                # Record the full entry context (CEO/bull/bear/quant/news/critic)
+                # so the journal can feed performance digests back to the agents
+                # and the Risk Critic on subsequent trades. Fail-safe: a journal
+                # error never blocks the trade (it already executed).
+                try:
+                    ticket_for_journal = None
+                    if self.mode == "LIVE":
+                        # ticket comes from the live_order dict if present
+                        try:
+                            ticket_for_journal = live_order.get('ticket') if live_order else None
+                        except Exception:
+                            ticket_for_journal = None
+                    self.trade_journal.record_entry(
+                        ticket=ticket_for_journal,
+                        signal=decision,
+                        entry_price=execution_price,
+                        lot_size=lot_size,
+                        stop_loss=sl_price,
+                        take_profit=tp_price,
+                        confidence=confidence,
+                        regime=regime,
+                        fibo_zone=fibo_zone,
+                        macd_state=macd_cross,
+                        ceo_reasoning=reasoning,
+                        bull_reasoning=getattr(bull_res, 'reasoning', ''),
+                        bear_reasoning=getattr(bear_res, 'reasoning', ''),
+                        quant_summary=quant_res.get('technical_summary', '') if isinstance(quant_res, dict) else '',
+                        news_summary=news_res.get('fundamental_summary', '') if isinstance(news_res, dict) else '',
+                        critic_verdict=critic_result.get("verdict", ""),
+                        critic_concerns=critic_result.get("risk_concerns", ""),
+                        timestamp=str(timestamp),
+                    )
+                except Exception as j_err:
+                    logger.debug(f"TradeJournal entry recording failed (non-fatal): {j_err}")
         else:
             logger.info("   ➜ Skipping: NO_TRADE or Low Confidence")
             analysis_record["trade_executed"] = False
@@ -1202,7 +1524,28 @@ Write a concise reflection in Thai (2-3 sentences) explaining the market dynamic
             # Append lesson to memory
             self.learning_memory.append(lesson_learned)
             logger.info(f"🧠 Live Trade Lesson Learned: {lesson_learned}")
-            
+
+            # ─── TRADE JOURNAL EXIT RECORDING (Integration Point 5 — live side) ───
+            try:
+                self.trade_journal.record_exit(
+                    ticket=ticket,
+                    exit_price=exit_price,
+                    pnl_usd=pnl_usd,
+                    close_reason=close_reason,
+                    exit_reasoning=f"Live position #{ticket} closed: {close_reason}",
+                    lesson_learned=lesson_learned,
+                    exit_time=str(datetime.utcnow()),
+                )
+                # Keep RiskManager internal state in sync (no-op when journal
+                # is managing streaks, but keeps fallback counters consistent).
+                self.risk_manager.record_trade_result(
+                    pnl_usd=pnl_usd,
+                    close_reason=close_reason,
+                    current_time=datetime.utcnow(),
+                )
+            except Exception as j_err:
+                logger.debug(f"TradeJournal live exit update failed (non-fatal): {j_err}")
+
             # 📢 Send detailed closure report to Discord
             try:
                 self.discord_reporter.report_order_closed(

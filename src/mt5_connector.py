@@ -50,29 +50,23 @@ class MT5Connector:
             return True
 
         logger.info("Initializing MetaTrader 5...")
-        if not mt5.initialize():
-            logger.error(f"mt5.initialize() failed. Error code: {mt5.last_error()}")
-            return False
-
-        # If credentials are provided in .env, log in.
-        # Otherwise, MT5 will just use the currently active account in the opened MT5 app!
+        # Pass credentials directly to initialize() — this is how mt5linux/Wine
+        # works: the terminal in the container needs them at init time.
         if self.login_id and self.password and self.server:
             logger.info(f"Logging in to MT5 Server: {self.server} (Account: {self.login_id})...")
             try:
                 login_num = int(self.login_id)
-                authorized = mt5.login(
-                    login=login_num,
-                    password=self.password,
-                    server=self.server
-                )
-                if not authorized:
-                    logger.error(f"MT5 login failed. Error code: {mt5.last_error()}")
+                if not mt5.initialize(login=login_num, password=self.password, server=self.server):
+                    logger.error(f"mt5.initialize() failed. Error code: {mt5.last_error()}")
                     return False
                 logger.info("✅ Successfully logged in to MT5 Demo Account!")
             except ValueError:
                 logger.error("MT5_LOGIN in .env must be a number.")
                 return False
         else:
+            if not mt5.initialize():
+                logger.error(f"mt5.initialize() failed. Error code: {mt5.last_error()}")
+                return False
             logger.info("ℹ️ No login credentials in .env. MT5 will use the currently active terminal account.")
 
         self.initialized = True
@@ -331,6 +325,12 @@ class MT5Connector:
         try:
             start_dt = pd.to_datetime(start_date)
             end_dt = pd.to_datetime(end_date)
+            # mt5linux's copy_rates_range calls date.astimezone() internally,
+            # which breaks with tz-naive datetimes on pandas 3.0.
+            # Localize to UTC first so .astimezone() works.
+            from datetime import timezone as dt_tz
+            start_dt = start_dt.to_pydatetime().replace(tzinfo=dt_tz.utc)
+            end_dt = end_dt.to_pydatetime().replace(tzinfo=dt_tz.utc)
             rates = mt5.copy_rates_range(self.symbol, tf, start_dt, end_dt)
             if rates is None or len(rates) == 0:
                 logger.warning(f"No historical rates found on MT5 server for {self.symbol} ({timeframe}).")
